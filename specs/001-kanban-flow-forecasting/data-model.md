@@ -123,10 +123,28 @@ The feature stores Jira source facts, local derived analytics, and forecast cach
   - A sync may publish a `dataVersion` only after projection rebuild succeeds.
 - **Relationships**:
   - Belongs to one `FlowScope`.
+  - Owns `SyncWorkItemStage` rows while the sync is running.
   - Produces updated `WorkItem`, projection, and model records.
 - **State Transitions**:
   - `queued -> running`
   - `running -> succeeded | failed | canceled`
+
+### SyncWorkItemStage
+
+- **Purpose**: Bounded staging area for normalized Jira issues collected during a running sync before they are published to `WorkItem`.
+- **Key Fields**:
+  - `id`: Internal UUID
+  - `syncRunId`: FK to `SyncRun`
+  - `scopeId`: Scope being synchronized
+  - Work-item snapshot fields: Jira issue identifiers, issue type/status names, timestamps, assignee, Jira URL, exclusion reason
+  - `lifecycleEvents`: Serialized normalized lifecycle events for final publication
+  - `stagedAt`: Timestamp when the row was staged
+- **Validation Rules**:
+  - `jiraIssueId` must be unique within a sync run.
+  - Staged rows are not read by analytics APIs and must not change the published `dataVersion`.
+  - On successful completion, staged rows are copied to `WorkItem` and removed in the same transaction that publishes the sync run.
+- **Relationships**:
+  - Belongs to one `SyncRun`.
 
 ### WorkItem
 
