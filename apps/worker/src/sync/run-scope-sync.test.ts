@@ -126,7 +126,7 @@ function* issueStream<T>(...issues: T[]): Generator<T> {
 }
 
 function createDeferred() {
-  let resolve!: () => void;
+  let resolve: () => void = () => undefined;
   const promise = new Promise<void>((res) => {
     resolve = res;
   });
