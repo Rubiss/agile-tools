@@ -553,10 +553,10 @@ async function publishSyncedWorkItems(
           },
         });
 
-        const lifecycleEvents = restoreLifecycleEvents(item.lifecycleEvents);
-        if (lifecycleEvents.length > 0) {
+        const restoredLifecycleEvents = restoreLifecycleEvents(item.lifecycleEvents);
+        if (restoredLifecycleEvents.length > 0) {
           await tx.workItemLifecycleEvent.createMany({
-            data: lifecycleEvents.map((event) => ({
+            data: restoredLifecycleEvents.map((event) => ({
               workItemId: workItem.id,
               rawChangelogId: event.rawChangelogId,
               eventType: event.eventType,
