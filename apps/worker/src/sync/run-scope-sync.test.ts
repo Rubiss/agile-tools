@@ -126,11 +126,11 @@ function* issueStream<T>(...issues: T[]): Generator<T> {
 }
 
 function createDeferred() {
-  let resolve: () => void = () => undefined;
+  let resolve: (() => void) | undefined;
   const promise = new Promise<void>((res) => {
     resolve = res;
   });
-  return { promise, resolve };
+  return { promise, resolve: () => resolve?.() };
 }
 
 async function* pausingIssueStream<T>(
