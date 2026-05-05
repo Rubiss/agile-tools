@@ -411,12 +411,15 @@ type StagedLifecycleEvent = Omit<NormalizedWorkItem['lifecycleEvents'][number], 
   changedAt: string;
 };
 
-const LIFECYCLE_EVENT_TYPES = new Set<StagedLifecycleEvent['eventType']>([
-  'status_change',
-  'field_change',
-  'reopened',
-  'completed',
-]);
+const LIFECYCLE_EVENT_TYPE_MAP: Record<StagedLifecycleEvent['eventType'], true> = {
+  status_change: true,
+  field_change: true,
+  reopened: true,
+  completed: true,
+};
+const LIFECYCLE_EVENT_TYPES = new Set<StagedLifecycleEvent['eventType']>(
+  Object.keys(LIFECYCLE_EVENT_TYPE_MAP) as StagedLifecycleEvent['eventType'][],
+);
 
 function stageLifecycleEvents(
   events: NormalizedWorkItem['lifecycleEvents'],
@@ -427,16 +430,24 @@ function stageLifecycleEvents(
   }));
 }
 
-function restoreLifecycleEvents(value: unknown): NormalizedWorkItem['lifecycleEvents'] {
+function restoreLifecycleEvents(
+  value: unknown,
+  syncRunId: string,
+  jiraIssueId: string,
+): NormalizedWorkItem['lifecycleEvents'] {
   if (!Array.isArray(value)) {
-    logger.warn('Ignoring invalid staged lifecycle events payload');
+    logger.warn('Ignoring invalid staged lifecycle events payload', { syncRunId, jiraIssueId });
     return [];
   }
 
   const restoredEvents: NormalizedWorkItem['lifecycleEvents'] = [];
   for (const event of value) {
     if (!isStagedLifecycleEvent(event)) {
-      logger.warn('Ignoring malformed staged lifecycle event');
+      logger.warn('Ignoring malformed staged lifecycle event', {
+        syncRunId,
+        jiraIssueId,
+        eventType: getStagedEventType(event),
+      });
       continue;
     }
     restoredEvents.push({
@@ -450,6 +461,22 @@ function restoreLifecycleEvents(value: unknown): NormalizedWorkItem['lifecycleEv
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
+}
+
+function getStagedEventType(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null || !('eventType' in value)) {
+    return undefined;
+  }
+
+  const eventType = (value as { eventType?: unknown }).eventType;
+  if (
+    typeof eventType === 'string' ||
+    typeof eventType === 'number' ||
+    typeof eventType === 'boolean'
+  ) {
+    return String(eventType);
+  }
+  return undefined;
 }
 
 function isStagedLifecycleEvent(value: unknown): value is StagedLifecycleEvent {
@@ -594,7 +621,11 @@ async function publishSyncedWorkItems(
           },
         });
 
-        const restoredLifecycleEvents = restoreLifecycleEvents(item.lifecycleEvents);
+        const restoredLifecycleEvents = restoreLifecycleEvents(
+          item.lifecycleEvents,
+          syncRunId,
+          item.jiraIssueId,
+        );
         if (restoredLifecycleEvents.length > 0) {
           await tx.workItemLifecycleEvent.createMany({
             data: restoredLifecycleEvents.map((event) => ({
