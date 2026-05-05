@@ -149,6 +149,9 @@ async function* pausingIssueStream<T>(
 }
 
 function createDb(options?: { doneStatusIds?: string[] }) {
+  type StagedItem = { id: string; syncRunId: string; jiraIssueId: string };
+  type StageCreateManyArgs = { data: Array<Omit<StagedItem, 'id'>>; skipDuplicates?: boolean };
+
   const syncRun = { id: 'run-1', scopeId: 'scope-1', status: 'queued' };
   const scope = {
     id: 'scope-1',
@@ -172,19 +175,17 @@ function createDb(options?: { doneStatusIds?: string[] }) {
     }),
   );
   const workItemLifecycleCreateMany = vi.fn().mockResolvedValue(undefined);
-  const stagedItems: Array<{ id: string; syncRunId: string; jiraIssueId: string }> = [];
+  const stagedItems: StagedItem[] = [];
   const syncWorkItemStage = {
-    createMany: vi.fn(
-      (args: { data: Array<Omit<(typeof stagedItems)[number], 'id'>>; skipDuplicates?: boolean }) => {
-        for (const item of args.data) {
-          stagedItems.push({
-            id: `stage-${stagedItems.length + 1}`,
-            ...item,
-          });
-        }
-        return Promise.resolve({ count: args.data.length });
-      },
-    ),
+    createMany: vi.fn((args: StageCreateManyArgs) => {
+      for (const item of args.data) {
+        stagedItems.push({
+          id: `stage-${stagedItems.length + 1}`,
+          ...item,
+        });
+      }
+      return Promise.resolve({ count: args.data.length });
+    }),
     findMany: vi.fn(
       (args: {
         where: { syncRunId: string };

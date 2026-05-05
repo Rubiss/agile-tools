@@ -403,6 +403,7 @@ async function processBatch(
 }
 
 type StagedLifecycleEvent = Omit<NormalizedWorkItem['lifecycleEvents'][number], 'changedAt'> & {
+  // Lifecycle events are stored in a JSONB staging column, so Date values are serialized explicitly.
   changedAt: string;
 };
 
@@ -417,6 +418,7 @@ function stageLifecycleEvents(
 
 function restoreLifecycleEvents(value: unknown): NormalizedWorkItem['lifecycleEvents'] {
   if (!Array.isArray(value)) {
+    logger.warn('Ignoring invalid staged lifecycle events payload');
     return [];
   }
 
