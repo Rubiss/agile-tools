@@ -87,6 +87,15 @@ async function finalizeRunningSyncRun(
   return true;
 }
 
+async function cleanupStagedWorkItems(db: PrismaClient, syncRunId: string): Promise<void> {
+  await db.syncWorkItemStage.deleteMany({ where: { syncRunId } }).catch((cleanupErr: unknown) => {
+    logger.warn('Failed to clean up staged work items', {
+      syncRunId,
+      error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+    });
+  });
+}
+
 /**
  * Execute the full Jira sync pipeline for a single scope.
  *
@@ -115,7 +124,7 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
     });
     return;
   }
-  await db.syncWorkItemStage.deleteMany({ where: { syncRunId } });
+  await cleanupStagedWorkItems(db, syncRunId);
 
   // Track connection context so the catch block can update health even on early errors.
   let scopeWorkspaceId: string | undefined;
@@ -350,9 +359,10 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
         errorSummary,
       });
       if (!finalized) {
+        await cleanupStagedWorkItems(db, syncRunId);
         return;
       }
-      await db.syncWorkItemStage.deleteMany({ where: { syncRunId } });
+      await cleanupStagedWorkItems(db, syncRunId);
     } catch (updateErr: unknown) {
       logger.error('Failed to update SyncRun to failed state', {
         syncRunId,

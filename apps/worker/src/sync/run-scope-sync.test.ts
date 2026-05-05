@@ -500,6 +500,39 @@ describe('runScopeSync', () => {
     expect(db.workItem.upsert).toHaveBeenCalledTimes(11);
   });
 
+  it('cleans up staged work items when the run is superseded mid-stream', async () => {
+    const db = createDb({ doneStatusIds: [] });
+    const issues = Array.from({ length: 10 }, (_, index) =>
+      makeIssue({
+        id: `ISSUE-${index + 1}`,
+        key: `PROJ-${index + 1}`,
+        projectId: 'proj-board',
+        statusId: '10',
+        statusName: 'In Progress',
+      }),
+    );
+    db.syncRun.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    streamBoardIssuesMock.mockReturnValue(issueStream(...issues));
+
+    await expect(
+      runScopeSync(db as unknown as Parameters<typeof runScopeSync>[0], 'run-1'),
+    ).resolves.toBeUndefined();
+
+    expect(db.syncWorkItemStage.createMany).toHaveBeenCalledTimes(1);
+    expect(db.syncWorkItemStage.deleteMany).toHaveBeenCalledTimes(2);
+    expect(db.syncWorkItemStage.deleteMany).toHaveBeenLastCalledWith({
+      where: { syncRunId: 'run-1' },
+    });
+    expect(db.workItem.upsert).not.toHaveBeenCalled();
+    expect(updateConnectionHealthAfterSyncMock).not.toHaveBeenCalled();
+  });
+
   it('does not update connection health when the run has already been superseded', async () => {
     const db = createDb();
     db.syncRun.updateMany
