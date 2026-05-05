@@ -2,6 +2,7 @@ import { getPrismaClient } from '@agile-tools/db';
 import { getConfig, logger } from '@agile-tools/shared';
 import { initQueue, closeQueue } from './queue.js';
 import { registerJobs } from '../jobs/register-jobs.js';
+import { cancelActiveSyncRuns } from '../jobs/active-sync-runs.js';
 
 let _started = false;
 
@@ -33,8 +34,10 @@ export async function stopWorker(): Promise<void> {
 
   logger.info('Worker shutting down');
 
+  const prisma = getPrismaClient();
   await closeQueue();
-  await getPrismaClient().$disconnect();
+  await cancelActiveSyncRuns(prisma);
+  await prisma.$disconnect();
 
   _started = false;
   logger.info('Worker stopped');

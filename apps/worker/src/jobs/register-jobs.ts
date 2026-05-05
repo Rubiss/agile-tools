@@ -5,6 +5,7 @@ import { logger } from '@agile-tools/shared';
 import type { Job } from 'pg-boss';
 import { runScopeSync } from '../sync/run-scope-sync.js';
 import { registerScopeSyncDispatch } from './schedule-scope-syncs.js';
+import { trackActiveSyncRun } from './active-sync-runs.js';
 
 // Job data shapes — these are the payloads stored in pg-boss job records.
 interface ScopeSyncJobData {
@@ -54,6 +55,7 @@ async function handleScopeSync(jobs: Job<ScopeSyncJobData>[]): Promise<void> {
 
     logger.info('Scope sync job received', { jobId: job.id, scopeId, syncRunId, trigger });
 
+    const untrackSyncRun = trackActiveSyncRun(syncRunId);
     try {
       await runScopeSync(db, syncRunId);
     } catch (err) {
@@ -65,6 +67,8 @@ async function handleScopeSync(jobs: Job<ScopeSyncJobData>[]): Promise<void> {
         syncRunId,
         error: err instanceof Error ? err.message : String(err),
       });
+    } finally {
+      untrackSyncRun();
     }
   }
 }
