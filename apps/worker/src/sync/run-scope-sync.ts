@@ -218,6 +218,7 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
     // Stream and process issues in fixed-size batches to bound memory and exploit
     // parallelism in changelog fetching (the Jira client's internal pLimit throttles HTTP).
     let batch: RawJiraIssue[] = [];
+    const syncedItems: NormalizedWorkItem[] = [];
     const projectIdsSet = new Set<string>();
     const processedIssueIds = new Set<string>();
 
@@ -228,13 +229,13 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
       processedIssueIds.add(issue.id);
       batch.push(issue);
       if (batch.length >= BATCH_SIZE) {
-        await processBatch(db, jiraClient, batch, ctx, projectIdsSet);
+        syncedItems.push(...(await processBatch(jiraClient, batch, ctx, projectIdsSet)));
         await requireRunningSyncRun(db, syncRunId, claimedStartedAt);
         batch = [];
       }
     }
     if (batch.length > 0) {
-      await processBatch(db, jiraClient, batch, ctx, projectIdsSet);
+      syncedItems.push(...(await processBatch(jiraClient, batch, ctx, projectIdsSet)));
       await requireRunningSyncRun(db, syncRunId, claimedStartedAt);
       batch = [];
     }
@@ -259,13 +260,13 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
           processedIssueIds.add(issue.id);
           batch.push(issue);
           if (batch.length >= BATCH_SIZE) {
-            await processBatch(db, jiraClient, batch, ctx, projectIdsSet);
+            syncedItems.push(...(await processBatch(jiraClient, batch, ctx, projectIdsSet)));
             await requireRunningSyncRun(db, syncRunId, claimedStartedAt);
             batch = [];
           }
         }
         if (batch.length > 0) {
-          await processBatch(db, jiraClient, batch, ctx, projectIdsSet);
+          syncedItems.push(...(await processBatch(jiraClient, batch, ctx, projectIdsSet)));
           await requireRunningSyncRun(db, syncRunId, claimedStartedAt);
         }
 
@@ -286,11 +287,13 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
     await requireRunningSyncRun(db, syncRunId, claimedStartedAt);
 
     // Use syncRunId as the dataVersion — it is already a UUID and unique per sync.
-    const succeeded = await finalizeRunningSyncRun(db, syncRunId, {
-      status: 'succeeded',
-      finishedAt: new Date(),
-      dataVersion: syncRunId,
-    });
+    const succeeded = await publishSyncedWorkItems(
+      db,
+      syncRunId,
+      claimedStartedAt,
+      scope.id,
+      syncedItems,
+    );
     if (!succeeded) {
       return;
     }
@@ -375,109 +378,125 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
 }
 
 /**
- * Fetch changelogs for a batch of issues concurrently, normalize each, then upsert to DB.
+ * Fetch changelogs for a batch of issues concurrently, then normalize each item.
  * Concurrency for HTTP is bounded by the Jira client's internal pLimit.
  */
 async function processBatch(
-  db: PrismaClient,
   jiraClient: JiraClient,
   issues: RawJiraIssue[],
   ctx: NormalizeContext,
   projectIdsSet: Set<string>,
-): Promise<void> {
+): Promise<NormalizedWorkItem[]> {
   const changelogs = await Promise.all(
     issues.map((issue) => fetchIssueChangelog(jiraClient, issue.id)),
   );
 
-  for (const [index, issue] of issues.entries()) {
+  return issues.map((issue, index) => {
     const normalized = normalizeJiraIssue(issue, changelogs[index]!, ctx);
     projectIdsSet.add(normalized.projectId);
-    // Keep guarded writes single-filed: each item transaction coordinates on the
-    // SyncRun row so stale/superseded runs cannot commit additional work-item state.
-    await upsertWorkItem(db, normalized, ctx);
-  }
+    return normalized;
+  });
 }
 
-async function upsertWorkItem(
+async function publishSyncedWorkItems(
   db: PrismaClient,
-  item: NormalizedWorkItem,
-  ctx: NormalizeContext,
-): Promise<void> {
-  await db.$transaction(async (tx) => {
+  syncRunId: string,
+  startedAt: Date,
+  scopeId: string,
+  items: NormalizedWorkItem[],
+): Promise<boolean> {
+  return db.$transaction(async (tx) => {
     await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id
       FROM "SyncRun"
-      WHERE id = ${ctx.syncRunId}
+      WHERE id = ${syncRunId}
         AND status = 'running'
       FOR UPDATE
     `;
     if (rows.length === 0) {
-      throw new SyncError('SYNC_RUN_ABORTED', `SyncRun ${ctx.syncRunId} is no longer running`);
+      logger.warn('SyncRun left running state before publish; skipping', {
+        syncRunId,
+      });
+      return false;
     }
     await tx.$executeRaw`
       UPDATE "SyncRun"
-      SET "updatedAt" = NOW()
-      WHERE id = ${ctx.syncRunId}
+      SET "startedAt" = ${startedAt}, "updatedAt" = NOW()
+      WHERE id = ${syncRunId}
         AND status = 'running'
     `;
 
-    const workItem = await tx.workItem.upsert({
-      where: { scopeId_jiraIssueId: { scopeId: ctx.scopeId, jiraIssueId: item.jiraIssueId } },
-      create: {
-        scopeId: ctx.scopeId,
-        jiraIssueId: item.jiraIssueId,
-        issueKey: item.issueKey,
-        summary: item.summary,
-        issueTypeId: item.issueTypeId,
-        issueTypeName: item.issueTypeName,
-        projectId: item.projectId,
-        currentStatusId: item.currentStatusId,
-        currentStatusName: item.currentStatusName,
-        currentColumn: item.currentColumn,
-        assigneeName: item.assigneeName,
-        createdAt: item.createdAt,
-        startedAt: item.startedAt,
-        completedAt: item.completedAt,
-        reopenedCount: item.reopenedCount,
-        directUrl: item.directUrl,
-        excludedReason: item.excludedReason,
-        syncedAt: new Date(),
-        lastSyncRunId: ctx.syncRunId,
-      },
-      update: {
-        issueKey: item.issueKey,
-        summary: item.summary,
-        issueTypeId: item.issueTypeId,
-        issueTypeName: item.issueTypeName,
-        projectId: item.projectId,
-        currentStatusId: item.currentStatusId,
-        currentStatusName: item.currentStatusName,
-        currentColumn: item.currentColumn,
-        assigneeName: item.assigneeName,
-        startedAt: item.startedAt,
-        completedAt: item.completedAt,
-        reopenedCount: item.reopenedCount,
-        directUrl: item.directUrl,
-        excludedReason: item.excludedReason,
-        syncedAt: new Date(),
-        lastSyncRunId: ctx.syncRunId,
+    const syncedAt = new Date();
+    for (const item of items) {
+      const workItem = await tx.workItem.upsert({
+        where: { scopeId_jiraIssueId: { scopeId, jiraIssueId: item.jiraIssueId } },
+        create: {
+          scopeId,
+          jiraIssueId: item.jiraIssueId,
+          issueKey: item.issueKey,
+          summary: item.summary,
+          issueTypeId: item.issueTypeId,
+          issueTypeName: item.issueTypeName,
+          projectId: item.projectId,
+          currentStatusId: item.currentStatusId,
+          currentStatusName: item.currentStatusName,
+          currentColumn: item.currentColumn,
+          assigneeName: item.assigneeName,
+          createdAt: item.createdAt,
+          startedAt: item.startedAt,
+          completedAt: item.completedAt,
+          reopenedCount: item.reopenedCount,
+          directUrl: item.directUrl,
+          excludedReason: item.excludedReason,
+          syncedAt,
+          lastSyncRunId: syncRunId,
+        },
+        update: {
+          issueKey: item.issueKey,
+          summary: item.summary,
+          issueTypeId: item.issueTypeId,
+          issueTypeName: item.issueTypeName,
+          projectId: item.projectId,
+          currentStatusId: item.currentStatusId,
+          currentStatusName: item.currentStatusName,
+          currentColumn: item.currentColumn,
+          assigneeName: item.assigneeName,
+          startedAt: item.startedAt,
+          completedAt: item.completedAt,
+          reopenedCount: item.reopenedCount,
+          directUrl: item.directUrl,
+          excludedReason: item.excludedReason,
+          syncedAt,
+          lastSyncRunId: syncRunId,
+        },
+      });
+
+      if (item.lifecycleEvents.length > 0) {
+        await tx.workItemLifecycleEvent.createMany({
+          data: item.lifecycleEvents.map((event) => ({
+            workItemId: workItem.id,
+            rawChangelogId: event.rawChangelogId,
+            eventType: event.eventType,
+            fromStatusId: event.fromStatusId,
+            toStatusId: event.toStatusId,
+            changedFieldId: event.changedFieldId,
+            changedAt: event.changedAt,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    await tx.syncRun.updateMany({
+      where: { id: syncRunId, status: 'running' },
+      data: {
+        status: 'succeeded',
+        finishedAt: new Date(),
+        dataVersion: syncRunId,
       },
     });
 
-    if (item.lifecycleEvents.length > 0) {
-      await tx.workItemLifecycleEvent.createMany({
-        data: item.lifecycleEvents.map((event) => ({
-          workItemId: workItem.id,
-          rawChangelogId: event.rawChangelogId,
-          eventType: event.eventType,
-          fromStatusId: event.fromStatusId,
-          toStatusId: event.toStatusId,
-          changedFieldId: event.changedFieldId,
-          changedAt: event.changedAt,
-        })),
-        skipDuplicates: true,
-      });
-    }
+    return true;
   });
 }

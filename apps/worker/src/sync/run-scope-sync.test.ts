@@ -125,6 +125,29 @@ function* issueStream<T>(...issues: T[]): Generator<T> {
   }
 }
 
+function createDeferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+async function* pausingIssueStream<T>(
+  issues: T[],
+  pauseAfter: number,
+  onPaused: () => void,
+  resume: Promise<void>,
+): AsyncGenerator<T> {
+  for (const [index, issue] of issues.entries()) {
+    yield issue;
+    if (index + 1 === pauseAfter) {
+      onPaused();
+      await resume;
+    }
+  }
+}
+
 function createDb(options?: { doneStatusIds?: string[] }) {
   const syncRun = { id: 'run-1', scopeId: 'scope-1', status: 'queued' };
   const scope = {
@@ -157,6 +180,9 @@ function createDb(options?: { doneStatusIds?: string[] }) {
     },
     workItemLifecycleEvent: {
       createMany: workItemLifecycleCreateMany,
+    },
+    syncRun: {
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
   };
 
@@ -395,6 +421,36 @@ describe('runScopeSync', () => {
 
     expect(streamJqlIssuesMock).not.toHaveBeenCalled();
     expect(db.workItem.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not publish work items until the Jira issue stream is complete', async () => {
+    const db = createDb({ doneStatusIds: [] });
+    const paused = createDeferred();
+    const resume = createDeferred();
+    const issues = Array.from({ length: 11 }, (_, index) =>
+      makeIssue({
+        id: `ISSUE-${index + 1}`,
+        key: `PROJ-${index + 1}`,
+        projectId: 'proj-board',
+        statusId: '10',
+        statusName: 'In Progress',
+      }),
+    );
+
+    streamBoardIssuesMock.mockReturnValue(
+      pausingIssueStream(issues, 10, paused.resolve, resume.promise),
+    );
+
+    const syncPromise = runScopeSync(db as unknown as Parameters<typeof runScopeSync>[0], 'run-1');
+    await paused.promise;
+
+    expect(normalizeJiraIssueMock).toHaveBeenCalledTimes(10);
+    expect(db.workItem.upsert).not.toHaveBeenCalled();
+
+    resume.resolve();
+    await syncPromise;
+
+    expect(db.workItem.upsert).toHaveBeenCalledTimes(11);
   });
 
   it('does not update connection health when the run has already been superseded', async () => {
