@@ -100,6 +100,7 @@ If validating only the MVP slice, stop after the Connection And Sync journey. Th
 - Confirm the scope shows the latest successful sync timestamp.
 - Verify that the sync history records a successful manual refresh.
 - Confirm that connection health remains `healthy` after validation and sync.
+- During a subsequent manual or scheduled sync, refresh the flow view and confirm it continues to show the last successful data version until the new sync completes.
 
 ### 2. Scatter Plot For Aging And On-Hold Stories
 
