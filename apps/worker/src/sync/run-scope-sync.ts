@@ -402,10 +402,21 @@ async function processBatch(
   await stageWorkItems(db, ctx.scopeId, ctx.syncRunId, normalizedItems);
 }
 
+/**
+ * JSONB staging representation of lifecycle events. Runtime normalization uses
+ * Date instances, but staged rows serialize timestamps so Prisma can persist
+ * them in the SyncWorkItemStage.lifecycleEvents JSON column.
+ */
 type StagedLifecycleEvent = Omit<NormalizedWorkItem['lifecycleEvents'][number], 'changedAt'> & {
-  // Lifecycle events are stored in a JSONB staging column, so Date values are serialized explicitly.
   changedAt: string;
 };
+
+const LIFECYCLE_EVENT_TYPES = new Set<StagedLifecycleEvent['eventType']>([
+  'status_change',
+  'field_change',
+  'reopened',
+  'completed',
+]);
 
 function stageLifecycleEvents(
   events: NormalizedWorkItem['lifecycleEvents'],
@@ -422,13 +433,41 @@ function restoreLifecycleEvents(value: unknown): NormalizedWorkItem['lifecycleEv
     return [];
   }
 
-  return value.map((event) => {
-    const staged = event as StagedLifecycleEvent;
-    return {
-      ...staged,
-      changedAt: new Date(staged.changedAt),
-    };
-  });
+  const restoredEvents: NormalizedWorkItem['lifecycleEvents'] = [];
+  for (const event of value) {
+    if (!isStagedLifecycleEvent(event)) {
+      logger.warn('Ignoring malformed staged lifecycle event');
+      continue;
+    }
+    restoredEvents.push({
+      ...event,
+      changedAt: new Date(event.changedAt),
+    });
+  }
+
+  return restoredEvents;
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isStagedLifecycleEvent(value: unknown): value is StagedLifecycleEvent {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const event = value as Partial<StagedLifecycleEvent>;
+  return (
+    typeof event.rawChangelogId === 'string' &&
+    event.eventType !== undefined &&
+    LIFECYCLE_EVENT_TYPES.has(event.eventType) &&
+    isNullableString(event.fromStatusId) &&
+    isNullableString(event.toStatusId) &&
+    isNullableString(event.changedFieldId) &&
+    typeof event.changedAt === 'string' &&
+    !Number.isNaN(Date.parse(event.changedAt))
+  );
 }
 
 async function stageWorkItems(
