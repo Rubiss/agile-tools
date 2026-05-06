@@ -71,6 +71,7 @@ export async function buildScopeSummary(
     scope: mapScope(scope),
     connectionHealth: (connection?.healthStatus ?? 'draft') as ScopeSummary['connectionHealth'],
     ...(lastSync !== undefined ? { lastSync: mapSyncRun(lastSync) } : {}),
+    ...(lastSucceeded !== undefined ? { lastSucceededSync: mapSyncRun(lastSucceeded) } : {}),
     ...(filterOptions !== undefined ? { filterOptions } : {}),
     warnings,
   };

@@ -127,7 +127,7 @@ export default async function ScopePage({
   const summary = await buildScopeSummary(ctx.workspaceId, scopeId);
   if (!summary) notFound();
 
-  const { scope, connectionHealth, lastSync, filterOptions, warnings } = summary;
+  const { scope, connectionHealth, lastSync, lastSucceededSync, filterOptions, warnings } = summary;
 
   const healthColor: Record<string, string> = {
     healthy: palette.positive,
@@ -158,6 +158,9 @@ export default async function ScopePage({
   const formattedLastSyncAt = lastSync?.finishedAt
     ? formatScopeTimestamp(lastSync.finishedAt, scope.timezone)
     : null;
+  const formattedLastSucceededSyncAt = lastSucceededSync?.finishedAt
+    ? formatScopeTimestamp(lastSucceededSync.finishedAt, scope.timezone)
+    : null;
 
   return (
     <main style={pageShellStyle}>
@@ -184,7 +187,7 @@ export default async function ScopePage({
           <article style={statCardStyle}>
             <p style={statLabelStyle}>Last Sync</p>
             <p style={{ ...statValueStyle, fontSize: '1rem' }}>
-              {formattedLastSyncAt ?? 'No sync yet'}
+              {formattedLastSucceededSyncAt ?? 'No sync yet'}
             </p>
           </article>
           <article style={statCardStyle}>

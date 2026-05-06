@@ -71,6 +71,14 @@ beforeEach(() => {
       finishedAt: '2026-04-24T22:00:00.000Z',
       dataVersion: 'sync-1',
     },
+    lastSucceededSync: {
+      id: 'sync-1',
+      scopeId: 'scope-1',
+      trigger: 'manual',
+      status: 'succeeded',
+      finishedAt: '2026-04-24T22:00:00.000Z',
+      dataVersion: 'sync-1',
+    },
     warnings: [],
   });
 });
@@ -168,5 +176,50 @@ describe('ScopePage', () => {
     expect(
       screen.getByText(new RegExp(`finished\\s+${escapeRegExp(formattedTimestamp)}`)),
     ).toBeVisible();
+  });
+
+  it('shows the last succeeded sync timestamp in the stat card while a sync is running', async () => {
+    const lastSucceededAt = '2026-04-24T22:00:00.000Z';
+    buildScopeSummaryMock.mockResolvedValue({
+      scope: {
+        id: 'scope-1',
+        connectionId: 'connection-1',
+        boardId: 42,
+        boardName: 'Platform Board',
+        timezone: 'America/New_York',
+        includedIssueTypeIds: ['story'],
+        startStatusIds: ['in-progress'],
+        doneStatusIds: ['done'],
+        syncIntervalMinutes: 5,
+        status: 'active',
+      },
+      connectionHealth: 'healthy',
+      lastSync: {
+        id: 'sync-2',
+        scopeId: 'scope-1',
+        trigger: 'scheduled',
+        status: 'running',
+      },
+      lastSucceededSync: {
+        id: 'sync-1',
+        scopeId: 'scope-1',
+        trigger: 'manual',
+        status: 'succeeded',
+        finishedAt: lastSucceededAt,
+        dataVersion: 'sync-1',
+      },
+      warnings: [],
+    });
+
+    const formattedTimestamp = formatScopeTimestamp(lastSucceededAt, 'America/New_York');
+
+    render(await ScopePage({ params: Promise.resolve({ scopeId: 'scope-1' }) }));
+
+    // Stat card should show the last succeeded sync timestamp, not "No sync yet"
+    expect(await screen.findByText(formattedTimestamp)).toBeVisible();
+    // The running sync section should NOT show a "finished" timestamp
+    expect(
+      screen.queryByText(new RegExp(`finished\\s+${escapeRegExp(formattedTimestamp)}`)),
+    ).toBeNull();
   });
 });

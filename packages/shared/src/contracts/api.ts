@@ -166,6 +166,7 @@ export const ScopeSummarySchema = z.object({
   scope: FlowScopeSchema,
   connectionHealth: ConnectionHealthStatusSchema,
   lastSync: SyncRunSchema.optional(),
+  lastSucceededSync: SyncRunSchema.optional(),
   filterOptions: z
     .object({
       issueTypes: z.array(NamedValueSchema).optional(),
