@@ -3,8 +3,8 @@ import {
   getPrismaClient,
   getFlowScope,
   getJiraConnection,
-  listSyncRuns,
   getLastSucceededSyncRun,
+  getLastFinishedSyncRun,
   queryScopeFilterOptions,
 } from '@agile-tools/db';
 import { mapScope, mapSyncRun } from '@/app/api/v1/admin/scopes/_lib';
@@ -25,13 +25,11 @@ export async function buildScopeSummary(
   if (!scope) return null;
 
   // Run independent queries concurrently
-  const [connection, syncRuns, lastSucceeded] = await Promise.all([
+  const [connection, lastSync, lastSucceeded] = await Promise.all([
     getJiraConnection(db, workspaceId, scope.connectionId),
-    listSyncRuns(db, workspaceId, scopeId, 1),
+    getLastFinishedSyncRun(db, workspaceId, scopeId),
     getLastSucceededSyncRun(db, workspaceId, scopeId),
   ]);
-
-  const lastSync = syncRuns[0];
 
   // Pin filter options to the latest succeeded sync's published snapshot.
   // Omit filterOptions entirely if no succeeded sync has run yet so the UI
@@ -70,7 +68,7 @@ export async function buildScopeSummary(
   return {
     scope: mapScope(scope),
     connectionHealth: (connection?.healthStatus ?? 'draft') as ScopeSummary['connectionHealth'],
-    ...(lastSync !== undefined ? { lastSync: mapSyncRun(lastSync) } : {}),
+    ...(lastSync != null ? { lastSync: mapSyncRun(lastSync) } : {}),
     ...(filterOptions !== undefined ? { filterOptions } : {}),
     warnings,
   };
