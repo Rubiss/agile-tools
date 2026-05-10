@@ -1,6 +1,9 @@
 import { Prisma, type PrismaClient, type SyncRun, type SyncRunTrigger, type SyncRunStatus } from '@prisma/client';
 
 type SyncRunClient = PrismaClient | Prisma.TransactionClient;
+type SyncRunFindFirstClient = {
+  syncRun: Pick<SyncRunClient['syncRun'], 'findFirst'>;
+};
 
 export const STALE_ACTIVE_SYNC_RUN_TIMEOUT_MS = 60 * 60 * 1000;
 const ACTIVE_SYNC_RUN_STATUSES: SyncRunStatus[] = ['queued', 'running'];
@@ -107,6 +110,26 @@ export async function getLastSucceededSyncRun(
       dataVersion: { not: null },
     },
     orderBy: { createdAt: 'desc' },
+  });
+}
+
+/**
+ * Return the most recent terminal sync run for a scope, ordered by when it
+ * actually finished instead of when it was created.
+ */
+export async function getLastFinishedSyncRun(
+  client: SyncRunFindFirstClient,
+  workspaceId: string,
+  scopeId: string,
+): Promise<SyncRun | null> {
+  return client.syncRun.findFirst({
+    where: {
+      scopeId,
+      scope: { workspaceId },
+      status: { in: ['succeeded', 'failed', 'canceled'] },
+      finishedAt: { not: null },
+    },
+    orderBy: { finishedAt: 'desc' },
   });
 }
 

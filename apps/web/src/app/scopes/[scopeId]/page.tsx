@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { getPrismaClient, listSyncRuns } from '@agile-tools/db';
 import { InvalidTimeZoneError, normalizeTimeZoneOrThrow } from '@agile-tools/shared';
 import { getWorkspaceContext } from '@/server/auth';
 import { buildScopeSummary } from '@/server/views/scope-summary';
@@ -124,10 +125,23 @@ export default async function ScopePage({
     );
   }
 
-  const summary = await buildScopeSummary(ctx.workspaceId, scopeId);
+  const db = getPrismaClient();
+  const [summary, latestSyncRuns] = await Promise.all([
+    buildScopeSummary(ctx.workspaceId, scopeId),
+    listSyncRuns(db, ctx.workspaceId, scopeId, 1),
+  ]);
   if (!summary) notFound();
 
   const { scope, connectionHealth, lastSync, filterOptions, warnings } = summary;
+  const latestSync = latestSyncRuns[0];
+  const activeSync =
+    latestSync !== undefined
+    && (latestSync.status === 'queued' || latestSync.status === 'running')
+      ? latestSync
+      : null;
+  const displayedSyncStatus = activeSync?.status ?? lastSync?.status;
+  const displayedSyncErrorCode = activeSync?.errorCode ?? lastSync?.errorCode;
+  const displayedSyncErrorSummary = activeSync?.errorSummary ?? lastSync?.errorSummary;
 
   const healthColor: Record<string, string> = {
     healthy: palette.positive,
@@ -219,7 +233,7 @@ export default async function ScopePage({
             <span style={tonePillStyle(connectionTone)}>{connectionHealth}</span>
           </div>
 
-        {lastSync ? (
+        {displayedSyncStatus ? (
           <div style={{ display: 'grid', gap: '0.85rem' }}>
             <div style={insetPanelStyle}>
               <p style={{ margin: 0, color: palette.muted, fontSize: '0.9rem' }}>
@@ -227,33 +241,33 @@ export default async function ScopePage({
                 <strong
                   style={{
                     color:
-                      lastSync.status === 'succeeded'
+                      displayedSyncStatus === 'succeeded'
                         ? palette.positive
-                        : lastSync.status === 'failed'
+                        : displayedSyncStatus === 'failed'
                           ? palette.danger
                           : palette.accentStrong,
                   }}
                 >
-                  {lastSync.status}
+                  {displayedSyncStatus}
                 </strong>
                 {formattedLastSyncAt && (
                   <span style={{ marginLeft: '0.45rem', color: palette.soft }}>
-                    finished {formattedLastSyncAt}
+                    {activeSync ? 'last finished' : 'finished'} {formattedLastSyncAt}
                   </span>
                 )}
               </p>
             </div>
-            {lastSync.dataVersion && (
+            {lastSync?.dataVersion && (
               <div style={insetPanelStyle}>
                 <p style={{ margin: 0, color: palette.muted, fontSize: '0.9rem' }}>
                   Data version <span style={codeStyle}>{lastSync.dataVersion}</span>
                 </p>
               </div>
             )}
-            {lastSync.errorCode && (
+            {displayedSyncErrorCode && (
               <p style={{ margin: 0, color: palette.danger, fontSize: '0.875rem' }}>
-                Error: {lastSync.errorCode}
-                {lastSync.errorSummary && ` — ${lastSync.errorSummary}`}
+                Error: {displayedSyncErrorCode}
+                {displayedSyncErrorSummary && ` — ${displayedSyncErrorSummary}`}
               </p>
             )}
           </div>
