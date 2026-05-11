@@ -140,8 +140,8 @@ export default async function ScopePage({
       ? latestSync
       : null;
   const displayedSyncStatus = activeSync?.status ?? lastSync?.status;
-  const displayedSyncErrorCode = activeSync?.errorCode ?? lastSync?.errorCode;
-  const displayedSyncErrorSummary = activeSync?.errorSummary ?? lastSync?.errorSummary;
+  const displayedSyncErrorCode = activeSync ? activeSync.errorCode : lastSync?.errorCode;
+  const displayedSyncErrorSummary = activeSync ? activeSync.errorSummary : lastSync?.errorSummary;
 
   const healthColor: Record<string, string> = {
     healthy: palette.positive,
