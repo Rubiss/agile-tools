@@ -235,4 +235,46 @@ describe('ScopePage', () => {
     expect(screen.getByText('queued')).toBeVisible();
     expect(screen.queryByText(/finished\s+/i)).not.toBeInTheDocument();
   });
+
+  it('does not show the previous sync error while a newer sync is running', async () => {
+    buildScopeSummaryMock.mockResolvedValue({
+      scope: {
+        id: 'scope-1',
+        connectionId: 'connection-1',
+        boardId: 42,
+        boardName: 'Platform Board',
+        timezone: 'America/New_York',
+        includedIssueTypeIds: ['story', 'bug'],
+        startStatusIds: ['in-progress'],
+        doneStatusIds: ['done'],
+        syncIntervalMinutes: 10,
+        status: 'active',
+      },
+      connectionHealth: 'healthy',
+      lastSync: {
+        id: 'sync-1',
+        scopeId: 'scope-1',
+        trigger: 'manual',
+        status: 'failed',
+        finishedAt: '2026-04-24T22:00:00.000Z',
+        errorCode: 'SYNC_TIMEOUT',
+        errorSummary: 'The previous sync timed out.',
+      },
+      warnings: [],
+    });
+    listSyncRunsMock.mockResolvedValue([
+      {
+        id: 'sync-2',
+        scopeId: 'scope-1',
+        trigger: 'manual',
+        status: 'running',
+      },
+    ]);
+
+    render(await ScopePage({ params: Promise.resolve({ scopeId: 'scope-1' }) }));
+
+    expect(await screen.findByText('running')).toBeVisible();
+    expect(screen.queryByText(/Error:\s+SYNC_TIMEOUT/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/The previous sync timed out\./i)).not.toBeInTheDocument();
+  });
 });
