@@ -44,7 +44,8 @@
   },
   "pnpm": {
     "overrides": {
-      "@react-spring/web": "^10.0.3"
+      "@react-spring/web": "^10.0.3",
+      "postcss": "8.5.10"
     }
   }
 }
