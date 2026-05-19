@@ -44,6 +44,15 @@ function resolveDatabaseUrlFromEnv(): void {
     return;
   }
 
+  // Constrain the variable name to a POSIX identifier shape. This keeps the
+  // configurable indirection from being abused to probe arbitrary properties
+  // of `process.env`.
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(sourceVarName)) {
+    throw new Error(
+      `Invalid environment configuration:\n  DATABASE_URL_ENV_VAR: "${sourceVarName}" is not a valid environment variable name (allowed: [A-Za-z_][A-Za-z0-9_]*)`,
+    );
+  }
+
   const resolved = process.env[sourceVarName];
   if (resolved === undefined || resolved === '') {
     throw new Error(
