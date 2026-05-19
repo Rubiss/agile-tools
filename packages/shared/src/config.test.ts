@@ -55,4 +55,60 @@ describe('getConfig', () => {
 
     expect(() => getConfig()).toThrowError(/DATABASE_URL|ENCRYPTION_KEY/);
   });
+
+  it('resolves DATABASE_URL from the variable named by DATABASE_URL_ENV_VAR', () => {
+    delete process.env['DATABASE_URL'];
+    process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
+    process.env['DATABASE_URL_ENV_VAR'] = 'XYZ_POSTGRESQL_URI';
+    process.env['XYZ_POSTGRESQL_URI'] = 'postgresql://injected-host:5432/agile_tools';
+
+    const config = getConfig();
+
+    expect(config.DATABASE_URL).toBe('postgresql://injected-host:5432/agile_tools');
+    // Side effect: DATABASE_URL is exported into process.env so libraries that
+    // read it directly (e.g. Prisma) see the resolved value.
+    expect(process.env['DATABASE_URL']).toBe('postgresql://injected-host:5432/agile_tools');
+  });
+
+  it('throws a clear error when DATABASE_URL_ENV_VAR points to a missing variable', () => {
+    delete process.env['DATABASE_URL'];
+    process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
+    process.env['DATABASE_URL_ENV_VAR'] = 'MISSING_POSTGRESQL_URI';
+    delete process.env['MISSING_POSTGRESQL_URI'];
+
+    expect(() => getConfig()).toThrowError(
+      /DATABASE_URL_ENV_VAR.*MISSING_POSTGRESQL_URI.*not set or is empty/,
+    );
+  });
+
+  it('throws a clear error when DATABASE_URL_ENV_VAR points to an empty variable', () => {
+    delete process.env['DATABASE_URL'];
+    process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
+    process.env['DATABASE_URL_ENV_VAR'] = 'EMPTY_POSTGRESQL_URI';
+    process.env['EMPTY_POSTGRESQL_URI'] = '';
+
+    expect(() => getConfig()).toThrowError(
+      /DATABASE_URL_ENV_VAR.*EMPTY_POSTGRESQL_URI.*not set or is empty/,
+    );
+  });
+
+  it('treats an empty DATABASE_URL_ENV_VAR as unset and falls back to DATABASE_URL', () => {
+    process.env['DATABASE_URL'] = 'postgresql://localhost:5432/agile_tools';
+    process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
+    process.env['DATABASE_URL_ENV_VAR'] = '';
+
+    const config = getConfig();
+
+    expect(config.DATABASE_URL).toBe('postgresql://localhost:5432/agile_tools');
+  });
+
+  it('treats DATABASE_URL_ENV_VAR=DATABASE_URL as a no-op', () => {
+    process.env['DATABASE_URL'] = 'postgresql://localhost:5432/agile_tools';
+    process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
+    process.env['DATABASE_URL_ENV_VAR'] = 'DATABASE_URL';
+
+    const config = getConfig();
+
+    expect(config.DATABASE_URL).toBe('postgresql://localhost:5432/agile_tools');
+  });
 });
