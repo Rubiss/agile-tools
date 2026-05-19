@@ -12,25 +12,17 @@ fi
 # (e.g. XYZ_POSTGRESQL_URI). Mirrors the shared config behavior used by the
 # Node runtime so that bootstrap-time tools (Prisma, pg-boss) see the same URL.
 if [ -n "${DATABASE_URL_ENV_VAR:-}" ] && [ "${DATABASE_URL_ENV_VAR}" != "DATABASE_URL" ]; then
-  # Restrict the variable name to a safe POSIX identifier shape before doing
-  # indirect expansion, so that arbitrary shell metacharacters cannot be
-  # injected through DATABASE_URL_ENV_VAR.
-  case "${DATABASE_URL_ENV_VAR}" in
-    [A-Za-z_]*)
-      if printf '%s' "${DATABASE_URL_ENV_VAR}" | grep -q '[^A-Za-z0-9_]'; then
-        echo "Error: DATABASE_URL_ENV_VAR='${DATABASE_URL_ENV_VAR}' is not a valid environment variable name (allowed: [A-Za-z_][A-Za-z0-9_]*)" >&2
-        exit 1
-      fi
-      ;;
-    *)
-      echo "Error: DATABASE_URL_ENV_VAR='${DATABASE_URL_ENV_VAR}' is not a valid environment variable name (allowed: [A-Za-z_][A-Za-z0-9_]*)" >&2
-      exit 1
-      ;;
-  esac
+  # Restrict the variable name to a POSIX identifier shape before doing
+  # indirect expansion, so that shell metacharacters cannot be injected
+  # through DATABASE_URL_ENV_VAR.
+  if ! printf '%s' "${DATABASE_URL_ENV_VAR}" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$'; then
+    echo "Error: DATABASE_URL_ENV_VAR='${DATABASE_URL_ENV_VAR}' is not a valid environment variable name (allowed: [A-Za-z_][A-Za-z0-9_]*)" >&2
+    exit 1
+  fi
   # `eval` is used here for portability: POSIX `sh` does not support bash's
-  # `${!var}` indirect expansion. The case/grep checks above restrict
-  # DATABASE_URL_ENV_VAR to a POSIX identifier shape ([A-Za-z_][A-Za-z0-9_]*),
-  # which prevents shell metacharacters from being injected here.
+  # `${!var}` indirect expansion. The regex check above restricts
+  # DATABASE_URL_ENV_VAR to a POSIX identifier, which prevents shell
+  # metacharacters from being injected on this line.
   resolved_database_url=$(eval "printf '%s' \"\${${DATABASE_URL_ENV_VAR}:-}\"")
   if [ -z "$resolved_database_url" ]; then
     echo "Error: DATABASE_URL_ENV_VAR is set to '${DATABASE_URL_ENV_VAR}', but that variable is not set or is empty" >&2
