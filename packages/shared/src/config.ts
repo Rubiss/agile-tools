@@ -32,7 +32,7 @@ let _config: Config | undefined;
  * `env("DATABASE_URL")` from the schema at client construction time) see a
  * consistent value.
  */
-function resolveDatabaseUrlFromEnv(): void {
+export function resolveDatabaseUrlFromEnv(): void {
   const sourceVarName = process.env['DATABASE_URL_ENV_VAR'];
   if (sourceVarName === undefined || sourceVarName === '') {
     return;
