@@ -92,6 +92,16 @@ describe('getConfig', () => {
     );
   });
 
+  it('throws a clear error when DATABASE_URL_ENV_VAR is not a valid identifier', () => {
+    delete process.env['DATABASE_URL'];
+    process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
+    process.env['DATABASE_URL_ENV_VAR'] = 'BAD-NAME$(whoami)';
+
+    expect(() => getConfig()).toThrowError(
+      /DATABASE_URL_ENV_VAR.*is not a valid environment variable name/,
+    );
+  });
+
   it('treats an empty DATABASE_URL_ENV_VAR as unset and falls back to DATABASE_URL', () => {
     process.env['DATABASE_URL'] = 'postgresql://localhost:5432/agile_tools';
     process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
