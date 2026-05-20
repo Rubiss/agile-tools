@@ -332,9 +332,11 @@ export default async function ScopePage({
         </section>
 
         <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <a href="/admin/jira" style={linkStyle}>
-          ← Back to Jira Setup
-        </a>
+          {ctx.role === 'admin' && (
+            <a href="/admin/jira" style={linkStyle}>
+              ← Back to Jira Setup
+            </a>
+          )}
         {filterOptions && (
           <a href={`/scopes/${scopeId}/forecast`} style={linkStyle}>
             📊 Forecast →

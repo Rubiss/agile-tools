@@ -28,16 +28,47 @@ export { serializeWorkspaceContext, type WorkspaceContext, type WorkspaceRole };
 export async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
-  if (!sessionCookie?.value) return null;
-
-  try {
-    return parseWorkspaceContextCookie(sessionCookie.value);
-  } catch (err) {
-    logger.warn('Failed to parse session cookie', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
+  if (sessionCookie?.value) {
+    try {
+      const parsed = parseWorkspaceContextCookie(sessionCookie.value);
+      if (parsed) return parsed;
+    } catch (err) {
+      logger.warn('Failed to parse session cookie', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
+
+  return getReadonlyWorkspaceFallback();
+}
+
+/**
+ * Optional, env-gated read-only workspace fallback for pilot or standalone
+ * deployments that do not yet have an upstream workspace auth/session
+ * provider. When enabled, requests without a valid `agile_session` cookie
+ * resolve to a `member`-scoped context for a configured workspace so that
+ * normal users can view read-only product pages.
+ *
+ * This is intentionally member-scoped: `requireAdminContext()` continues to
+ * reject the fallback because it always returns role `member`. A valid signed
+ * session cookie still takes precedence over the fallback.
+ *
+ * Enable with:
+ *   ALLOW_READONLY_WORKSPACE_FALLBACK=true
+ *   READONLY_WORKSPACE_ID=<workspace uuid>
+ *   READONLY_WORKSPACE_USER_ID=<optional stable user id>
+ */
+function getReadonlyWorkspaceFallback(): WorkspaceContext | null {
+  if (process.env['ALLOW_READONLY_WORKSPACE_FALLBACK'] !== 'true') return null;
+
+  const workspaceId = process.env['READONLY_WORKSPACE_ID'];
+  if (!workspaceId) return null;
+
+  return {
+    workspaceId,
+    userId: process.env['READONLY_WORKSPACE_USER_ID'] ?? 'readonly-public',
+    role: 'member',
+  };
 }
 
 /**

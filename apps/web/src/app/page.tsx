@@ -124,17 +124,19 @@ export default async function HomePage() {
           Signed in as {ctx.role} for workspace <span style={codeStyle}>{ctx.workspaceId}</span>.
         </p>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1.25rem' }}>
-          <a
-            href="/admin/jira"
-            style={{
-              ...buttonStyle('primary'),
-              display: 'inline-flex',
-              alignItems: 'center',
-              textDecoration: 'none',
-            }}
-          >
-            Open Jira setup
-          </a>
+          {ctx.role === 'admin' && (
+            <a
+              href="/admin/jira"
+              style={{
+                ...buttonStyle('primary'),
+                display: 'inline-flex',
+                alignItems: 'center',
+                textDecoration: 'none',
+              }}
+            >
+              Open Jira setup
+            </a>
+          )}
           {demoEnabled && (
             <LocalBootstrapForm
               label="Reset local demo data"
