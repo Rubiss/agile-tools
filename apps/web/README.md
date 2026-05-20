@@ -67,8 +67,8 @@ pnpm --filter @agile-tools/web lint
 - Pilot or standalone deployments without an upstream workspace auth provider
   can opt into a read-only workspace fallback so non-admin users can view
   product pages for a configured workspace. Set
-  `ALLOW_READONLY_WORKSPACE_FALLBACK=true` and `READONLY_WORKSPACE_ID=<workspace
-  uuid>` (optionally `READONLY_WORKSPACE_USER_ID=<stable id>`). When no valid
+  `ALLOW_READONLY_WORKSPACE_FALLBACK=true` and `READONLY_WORKSPACE_ID=<workspace uuid>`
+  (optionally `READONLY_WORKSPACE_USER_ID=<stable id>`). When no valid
   `agile_session` cookie is present, requests resolve to a `member`-scoped
   context for that workspace. Admin APIs and admin-only UI affordances stay
   hidden — `requireAdminContext()` keeps rejecting member contexts. This is a

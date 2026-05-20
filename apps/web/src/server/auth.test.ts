@@ -14,6 +14,12 @@ const { ResponseError } = await import('./errors');
 
 const ORIGINAL_ENV = { ...process.env };
 
+afterAll(() => {
+  process.env = ORIGINAL_ENV;
+  resetConfig();
+  vi.mocked(cookies).mockReset();
+});
+
 function makeCookieStore(cookieValue: string | null) {
   return {
     get: (name: string) =>
@@ -32,11 +38,6 @@ describe('getWorkspaceContext', () => {
     };
     resetConfig();
     vi.mocked(cookies).mockReset();
-  });
-
-  afterAll(() => {
-    process.env = ORIGINAL_ENV;
-    resetConfig();
   });
 
   it('returns null when there is no session cookie and the fallback is disabled', async () => {
