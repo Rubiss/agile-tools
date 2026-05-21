@@ -26,7 +26,16 @@ updates:
     # NOTE: do NOT add `group-by: dependency-name` here — that option is for
     # cross-directory monorepos and forces one PR per dependency, defeating
     # the whole point of grouping.
+    # Group order matters: Dependabot matches groups top-to-bottom and the
+    # first match wins. The `prisma` group must come BEFORE the type-based
+    # groups so it captures both `prisma` (devDep) and `@prisma/client` (dep)
+    # together — they share a major version contract and must be bumped as a
+    # pair, otherwise `prisma generate` fails with a missing runtime module.
     groups:
+      prisma:
+        patterns:
+          - "prisma"
+          - "@prisma/client"
       production-dependencies:
         dependency-type: "production"
         patterns:
