@@ -1,12 +1,11 @@
 version: 2
 
 updates:
-  # Keep the pnpm workspace current while avoiding duplicate PRs per package.
+  # pnpm workspace: a single root pnpm-lock.yaml is the only lockfile, so we
+  # scan from "/" only. Listing per-package directories would cause Dependabot
+  # to open overlapping PRs that race on the same lockfile.
   - package-ecosystem: "npm"
-    directories:
-      - "/"
-      - "/apps/*"
-      - "/packages/*"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "tuesday"
@@ -20,37 +19,22 @@ updates:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
       include: "scope"
+    # Two groups (one production, one development) so each weekly run produces
+    # at most two lockfile-touching PRs. Major bumps are kept in the same group
+    # rather than split off, because splitting causes parallel PRs that all
+    # conflict on pnpm-lock.yaml and trigger an endless rebase loop.
+    # NOTE: do NOT add `group-by: dependency-name` here — that option is for
+    # cross-directory monorepos and forces one PR per dependency, defeating
+    # the whole point of grouping.
     groups:
-      production-minor-patch:
+      production-dependencies:
         dependency-type: "production"
-        update-types:
-          - "minor"
-          - "patch"
         patterns:
           - "*"
-        group-by: "dependency-name"
-      production-major:
-        dependency-type: "production"
-        update-types:
-          - "major"
-        patterns:
-          - "*"
-        group-by: "dependency-name"
-      development-minor-patch:
+      development-dependencies:
         dependency-type: "development"
-        update-types:
-          - "minor"
-          - "patch"
         patterns:
           - "*"
-        group-by: "dependency-name"
-      development-major:
-        dependency-type: "development"
-        update-types:
-          - "major"
-        patterns:
-          - "*"
-        group-by: "dependency-name"
 
   - package-ecosystem: "github-actions"
     directory: "/"
