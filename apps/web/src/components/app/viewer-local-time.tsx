@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type ViewerLocalTimeProps = {
   /** ISO 8601 timestamp to render. */
@@ -50,10 +50,9 @@ function safeDateTimeFormat(locale: string): Intl.DateTimeFormat {
   }
 }
 
-function formatRelative(now: number, target: number, locale: string): string {
+function formatRelative(now: number, target: number, rtf: Intl.RelativeTimeFormat): string {
   const diffSeconds = Math.round((target - now) / 1000);
   const absSeconds = Math.abs(diffSeconds);
-  const rtf = safeRelativeTimeFormat(locale);
   // Treat anything under one minute as "now" so the label transitions cleanly
   // into "1 minute ago" without a 45–59s "seconds" window.
   if (absSeconds < 60) return rtf.format(0, 'second');
@@ -77,35 +76,46 @@ export function ViewerLocalTime({
   const [hydrated, setHydrated] = useState(false);
   const [, setTick] = useState(0);
 
+  const targetMs = useMemo(() => {
+    const ms = new Date(timestamp).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }, [timestamp]);
+
   useEffect(() => {
     setHydrated(true);
+    // Only tick if the timestamp is parseable; otherwise the component is
+    // permanently in the fallback state and re-renders would do nothing.
+    if (targetMs === null) return;
     const id = setInterval(() => setTick((n) => n + 1), 60_000);
     return () => clearInterval(id);
-  }, []);
+  }, [targetMs]);
 
-  if (!hydrated) {
-    return (
-      <time dateTime={timestamp} title={`Scope timezone: ${scopeTimezone}`}>
-        {scopeFallback}
-      </time>
-    );
-  }
+  const locale = useMemo(
+    () =>
+      typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-US',
+    [],
+  );
+  // Memoize Intl formatters by locale so we don't allocate fresh ones on
+  // every 60s tick / re-render.
+  const rtf = useMemo(() => safeRelativeTimeFormat(locale), [locale]);
+  const dtf = useMemo(() => safeDateTimeFormat(locale), [locale]);
 
-  const target = new Date(timestamp);
-  const targetMs = target.getTime();
-  if (!Number.isFinite(targetMs)) {
-    return (
-      <time dateTime={timestamp} title={`Scope timezone: ${scopeTimezone}`}>
-        {scopeFallback}
-      </time>
-    );
-  }
-
-  const locale =
-    typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-US';
-  const relative = formatRelative(Date.now(), targetMs, locale);
-  const localAbsolute = safeDateTimeFormat(locale).format(target);
   const tooltip = `${scopeFallback} (scope timezone: ${scopeTimezone})`;
+  const fallbackAriaLabel = `${scopeFallback} (scope timezone ${scopeTimezone})`;
+
+  // SSR / pre-hydration render AND the invalid-timestamp fallback share the
+  // same markup so server and first client paint agree, and so AT users always
+  // get the canonical scope-zone string via title + aria-label.
+  if (!hydrated || targetMs === null) {
+    return (
+      <time dateTime={timestamp} title={tooltip} aria-label={fallbackAriaLabel}>
+        {scopeFallback}
+      </time>
+    );
+  }
+
+  const relative = formatRelative(Date.now(), targetMs, rtf);
+  const localAbsolute = dtf.format(new Date(targetMs));
 
   return (
     <time
