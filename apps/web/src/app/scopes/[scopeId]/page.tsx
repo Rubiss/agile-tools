@@ -7,6 +7,7 @@ import { TriggerSyncButton } from '@/components/admin/trigger-sync-button';
 import { HoldDefinitionForm } from '@/components/admin/hold-definition-form';
 import { FlowAnalyticsSection } from '@/components/flow/flow-analytics-section';
 import { AuthRequiredPanel } from '@/components/app/auth-required-panel';
+import { ViewerLocalTime } from '@/components/app/viewer-local-time';
 import {
   type FlowScope,
   type ScopeSummary,
@@ -172,6 +173,16 @@ export default async function ScopePage({
   const formattedLastSyncAt = lastSync?.finishedAt
     ? formatScopeTimestamp(lastSync.finishedAt, scope.timezone)
     : null;
+  const lastSyncFinishedAt = lastSync?.finishedAt ?? null;
+  const lastSyncTimeNode = lastSyncFinishedAt && formattedLastSyncAt
+    ? (
+      <ViewerLocalTime
+        timestamp={lastSyncFinishedAt}
+        scopeFallback={formattedLastSyncAt}
+        scopeTimezone={scope.timezone}
+      />
+    )
+    : null;
 
   return (
     <main style={pageShellStyle}>
@@ -198,7 +209,7 @@ export default async function ScopePage({
           <article style={statCardStyle}>
             <p style={statLabelStyle}>Last Sync</p>
             <p style={{ ...statValueStyle, fontSize: '1rem' }}>
-              {formattedLastSyncAt ?? 'No sync yet'}
+              {lastSyncTimeNode ?? 'No sync yet'}
             </p>
           </article>
           <article style={statCardStyle}>
@@ -250,9 +261,9 @@ export default async function ScopePage({
                 >
                   {displayedSyncStatus}
                 </strong>
-                {formattedLastSyncAt && (
+                {lastSyncTimeNode && (
                   <span style={{ marginLeft: '0.45rem', color: palette.soft }}>
-                    {activeSync ? 'last finished' : 'finished'} {formattedLastSyncAt}
+                    {activeSync ? 'last finished' : 'finished'} {lastSyncTimeNode}
                   </span>
                 )}
               </p>

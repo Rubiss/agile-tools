@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 
 const { getWorkspaceContextMock, buildScopeSummaryMock, getPrismaClientMock, listSyncRunsMock } = vi.hoisted(() => ({
   getWorkspaceContextMock: vi.fn(),
@@ -45,10 +45,6 @@ import ScopePage, {
   formatScopeTimestamp,
   formatScopeTimestampParts,
 } from './page';
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 beforeEach(() => {
   getWorkspaceContextMock.mockResolvedValue({
@@ -165,25 +161,39 @@ describe('formatScopeTimestamp', () => {
 });
 
 describe('ScopePage', () => {
-  it('renders last sync timestamps in the selected scope timezone in both display locations', async () => {
-    const formattedTimestamp = formatScopeTimestamp(
-      '2026-04-24T22:00:00.000Z',
-      'America/New_York',
-    );
+  it('renders last sync as <time> elements anchored to the ISO timestamp with the scope-zone time in the tooltip and viewer-local text', async () => {
+    const isoTimestamp = '2026-04-24T22:00:00.000Z';
+    const formattedTimestamp = formatScopeTimestamp(isoTimestamp, 'America/New_York');
 
     render(await ScopePage({ params: Promise.resolve({ scopeId: 'scope-1' }) }));
 
-    expect(await screen.findByText(formattedTimestamp)).toBeVisible();
-    expect(
-      screen.getByText(new RegExp(`finished\\s+${escapeRegExp(formattedTimestamp)}`)),
-    ).toBeVisible();
+    const timestampNodes = Array.from(
+      document.querySelectorAll<HTMLTimeElement>(`time[datetime="${isoTimestamp}"]`),
+    );
+
+    // One node in the Last Sync stat card and one in the "finished ..." sentence.
+    expect(timestampNodes.length).toBeGreaterThanOrEqual(2);
+    for (const node of timestampNodes) {
+      expect(node.getAttribute('datetime')).toBe(isoTimestamp);
+      const title = node.getAttribute('title') ?? '';
+      expect(title).toContain('America/New_York');
+      expect(title).toContain(formattedTimestamp);
+    }
+
+    // After hydration the visible text is the viewer-local relative + absolute
+    // format, not the raw scope-zone string, which now lives in the tooltip.
+    await waitFor(() => {
+      const text = timestampNodes[0]!.textContent ?? '';
+      expect(text).toMatch(/ago|in \d|now|second|minute|hour|day|month|year/i);
+      expect(text).not.toBe(formattedTimestamp);
+    });
+
+    // The "finished" prefix still wraps the timestamp.
+    expect(screen.getByText(/finished/i)).toBeVisible();
   });
 
   it('keeps showing the last finished sync timestamp while a newer sync is running', async () => {
-    const formattedTimestamp = formatScopeTimestamp(
-      '2026-04-24T22:00:00.000Z',
-      'America/New_York',
-    );
+    const isoTimestamp = '2026-04-24T22:00:00.000Z';
     listSyncRunsMock.mockResolvedValue([
       {
         id: 'sync-2',
@@ -195,10 +205,11 @@ describe('ScopePage', () => {
 
     render(await ScopePage({ params: Promise.resolve({ scopeId: 'scope-1' }) }));
 
-    expect(await screen.findByText(formattedTimestamp)).toBeVisible();
-    expect(
-      screen.getByText(new RegExp(`last finished\\s+${escapeRegExp(formattedTimestamp)}`)),
-    ).toBeVisible();
+    const timestampNodes = Array.from(
+      document.querySelectorAll<HTMLTimeElement>(`time[datetime="${isoTimestamp}"]`),
+    );
+    expect(timestampNodes.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/last finished/i)).toBeVisible();
     expect(screen.getByText('running')).toBeVisible();
     expect(screen.queryByText('No sync yet')).not.toBeInTheDocument();
   });
