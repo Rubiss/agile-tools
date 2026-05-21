@@ -9,8 +9,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const nextDir = path.resolve(__dirname, 'apps/web/node_modules/next');
 
 export default defineConfig({
-  esbuild: {
-    jsx: 'automatic',
+  oxc: {
+    jsx: { runtime: 'automatic' },
   },
   resolve: {
     alias: [
