@@ -16,7 +16,7 @@ export function mapConnection(conn: DbConnection): ApiConnection {
     id: conn.id,
     baseUrl: conn.baseUrl,
     ...(conn.displayName != null && { displayName: conn.displayName }),
-    healthStatus: conn.healthStatus as ApiConnection['healthStatus'],
+    healthStatus: conn.healthStatus,
     ...(conn.lastValidatedAt != null && { lastValidatedAt: conn.lastValidatedAt.toISOString() }),
     ...(conn.lastHealthyAt != null && { lastHealthyAt: conn.lastHealthyAt.toISOString() }),
     ...(conn.lastErrorCode != null && { lastErrorCode: conn.lastErrorCode }),

@@ -148,7 +148,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   // Default to admin session; individual tests override for auth edge cases.
-  vi.mocked(cookies).mockReturnValue(makeCookieStore(adminCookieValue) as never);
+  vi.mocked(cookies).mockReturnValue(makeCookieStore(adminCookieValue));
   mswServer.resetHandlers();
 });
 
@@ -179,7 +179,7 @@ describe('POST /v1/admin/jira-connections', () => {
   });
 
   it('returns 401 when no session cookie is present', async () => {
-    vi.mocked(cookies).mockReturnValue(makeCookieStore(null) as never);
+    vi.mocked(cookies).mockReturnValue(makeCookieStore(null));
     const req = makeRequest('http://localhost/api/v1/admin/jira-connections', 'POST', {
       baseUrl: JIRA_BASE,
       pat: TEST_PAT,
@@ -189,7 +189,7 @@ describe('POST /v1/admin/jira-connections', () => {
   });
 
   it('returns 403 when the user is a member (not admin)', async () => {
-    vi.mocked(cookies).mockReturnValue(makeCookieStore(memberCookieValue) as never);
+    vi.mocked(cookies).mockReturnValue(makeCookieStore(memberCookieValue));
     const req = makeRequest('http://localhost/api/v1/admin/jira-connections', 'POST', {
       baseUrl: JIRA_BASE,
       pat: TEST_PAT,

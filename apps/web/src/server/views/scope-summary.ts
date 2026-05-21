@@ -67,7 +67,7 @@ export async function buildScopeSummary(
 
   return {
     scope: mapScope(scope),
-    connectionHealth: (connection?.healthStatus ?? 'draft') as ScopeSummary['connectionHealth'],
+    connectionHealth: (connection?.healthStatus ?? 'draft'),
     ...(lastSync != null ? { lastSync: mapSyncRun(lastSync) } : {}),
     ...(filterOptions !== undefined ? { filterOptions } : {}),
     warnings,

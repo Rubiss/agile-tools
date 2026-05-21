@@ -53,7 +53,7 @@ export function redactCredentials<T extends Record<string, unknown>>(obj: T): Om
   delete (copy as Record<string, unknown>)['token'];
   delete (copy as Record<string, unknown>)['secret'];
   delete (copy as Record<string, unknown>)['password'];
-  return copy as Omit<T, 'pat' | 'token' | 'secret' | 'password'>;
+  return copy;
 }
 
 /**

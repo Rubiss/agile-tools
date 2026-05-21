@@ -132,7 +132,7 @@ describe('POST /api/v1/scopes/:scopeId/forecasts', () => {
     vi.mocked(runWhenForecast).mockReturnValue({
       warnings: [],
       results: [{ confidenceLevel: 85, completionDate: '2026-05-01' }],
-    } as never);
+    });
 
     const response = await POST(
       new NextRequest('http://localhost/api/v1/scopes/scope-1/forecasts', {

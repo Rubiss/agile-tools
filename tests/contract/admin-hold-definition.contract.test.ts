@@ -92,7 +92,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  vi.mocked(cookies).mockReturnValue(makeCookieStore(adminCookieValue) as never);
+  vi.mocked(cookies).mockReturnValue(makeCookieStore(adminCookieValue));
   await getPrismaClient().holdDefinition.deleteMany({ where: { scopeId } });
 });
 
@@ -161,7 +161,7 @@ describe('PUT /v1/admin/scopes/:id/hold-definition', () => {
   });
 
   it('returns 401 when the session is missing', async () => {
-    vi.mocked(cookies).mockReturnValue(makeCookieStore(null) as never);
+    vi.mocked(cookies).mockReturnValue(makeCookieStore(null));
     const req = makeRequest(
       `http://localhost/api/v1/admin/scopes/${scopeId}/hold-definition`,
       'PUT',

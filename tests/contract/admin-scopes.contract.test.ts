@@ -164,7 +164,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  vi.mocked(cookies).mockReturnValue(makeCookieStore(adminCookieValue) as never);
+  vi.mocked(cookies).mockReturnValue(makeCookieStore(adminCookieValue));
   vi.mocked(enqueueScopeSyncJob).mockResolvedValue('test-job-id');
   mswServer.resetHandlers();
   const db = getPrismaClient();
@@ -250,7 +250,7 @@ describe('POST /v1/admin/scopes', () => {
   });
 
   it('returns 401 when unauthenticated', async () => {
-    vi.mocked(cookies).mockReturnValue(makeCookieStore(null) as never);
+    vi.mocked(cookies).mockReturnValue(makeCookieStore(null));
     const req = makeRequest('http://localhost/api/v1/admin/scopes', 'POST', {
       connectionId,
       ...SCOPE_PAYLOAD,

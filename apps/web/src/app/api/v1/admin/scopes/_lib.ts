@@ -93,7 +93,7 @@ export function mapScope(scope: DbFlowScope): ApiFlowScope {
     startStatusIds: scope.startStatusIds,
     doneStatusIds: scope.doneStatusIds,
     syncIntervalMinutes: scope.syncIntervalMinutes,
-    status: scope.status as ApiFlowScope['status'],
+    status: scope.status,
   };
 }
 
@@ -104,8 +104,8 @@ export function mapSyncRun(run: DbSyncRun): ApiSyncRun {
   return {
     id: run.id,
     scopeId: run.scopeId,
-    trigger: run.trigger as ApiSyncRun['trigger'],
-    status: run.status as ApiSyncRun['status'],
+    trigger: run.trigger,
+    status: run.status,
     ...(run.requestedBy != null && { requestedBy: run.requestedBy }),
     ...(run.startedAt != null && { startedAt: run.startedAt.toISOString() }),
     ...(run.finishedAt != null && { finishedAt: run.finishedAt.toISOString() }),
