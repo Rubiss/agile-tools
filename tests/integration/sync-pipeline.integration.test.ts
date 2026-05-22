@@ -75,8 +75,17 @@ describe('normalizeJiraIssue — pure unit', () => {
     expect(result.directUrl).toBe('https://jira.example.internal/browse/PROJ-1');
     expect(result.excludedReason).toBeNull();
     expect(result.reopenedCount).toBe(0);
-    expect(result.startedAt).toBeNull();
+    // No changelog, but currentStatus '10' is a start status, so startedAt
+    // falls back to createdAt so the item is treated as in-flow downstream.
+    expect(result.startedAt).toEqual(new Date('2025-01-01T00:00:00.000Z'));
     expect(result.completedAt).toBeNull();
+  });
+
+  it('leaves startedAt null when item is currently in a non-start status with no changelog', () => {
+    const issue = makeIssue({ status: { id: '5', name: 'Backlog' } });
+    const result = normalizeJiraIssue(issue, [], BASE_CONTEXT);
+
+    expect(result.startedAt).toBeNull();
   });
 
   it('sets excludedReason to "issue_type_excluded" when issue type is not in includedIssueTypeIds', () => {
@@ -454,9 +463,10 @@ describe('queryScopeFilterOptions — DB integration', () => {
           createdAt: new Date(),
         },
         {
-          // Pre-start bug whose issue type appears ONLY on items with
-          // startedAt=null. Verifies that queryScopeFilterOptions excludes
-          // both the status AND the issue type for pre-start-only items.
+          // Pre-start bug: simulates production behavior where an issue type
+          // outside the scope's includedIssueTypeIds gets excludedReason set
+          // during normalization. Verifies that queryScopeFilterOptions
+          // excludes both its status AND its issue type from dropdown options.
           scopeId,
           lastSyncRunId: syncRunId,
           jiraIssueId: 'F3',
@@ -469,6 +479,7 @@ describe('queryScopeFilterOptions — DB integration', () => {
           currentColumn: 'Backlog',
           directUrl: 'https://jira.example.internal/browse/FILT-3',
           createdAt: new Date(),
+          excludedReason: 'issue_type_excluded',
         },
       ],
     });
@@ -482,7 +493,7 @@ describe('queryScopeFilterOptions — DB integration', () => {
     const db = getPrismaClient();
     const opts = await queryScopeFilterOptions(db, scopeId);
 
-    // FILT-3 (Bug) has startedAt=null and must be excluded; only Story remains.
+    // FILT-3 (Bug) is excluded via excludedReason; only Story remains.
     expect(opts.issueTypes).toHaveLength(1);
     expect(opts.issueTypes[0]).toEqual({ id: 'story', name: 'Story' });
   });

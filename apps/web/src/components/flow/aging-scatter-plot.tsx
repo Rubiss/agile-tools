@@ -274,7 +274,7 @@ export function AgingScatterPlot({
         xScale={{ type: 'linear', min: 0, max: 'auto' }}
         yScale={{ type: 'linear', min: -1, max: 'auto' }}
         axisBottom={{
-          legend: 'Days since started',
+          legend: 'Working days since started',
           legendOffset: 42,
           legendPosition: 'middle',
         }}

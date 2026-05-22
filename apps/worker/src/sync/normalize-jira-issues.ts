@@ -55,7 +55,13 @@ export function normalizeJiraIssue(
     : null;
 
   const lifecycleEvents = deriveLifecycleEvents(changelog, ctx);
-  const { startedAt, completedAt } = deriveTimestamps(lifecycleEvents, currentStatusId, ctx);
+  const createdAt = new Date(fields.created);
+  const { startedAt, completedAt } = deriveTimestamps(
+    lifecycleEvents,
+    currentStatusId,
+    createdAt,
+    ctx,
+  );
   const reopenedCount = lifecycleEvents.filter((e) => e.eventType === 'reopened').length;
 
   return {
@@ -69,7 +75,7 @@ export function normalizeJiraIssue(
     currentStatusName: fields.status.name,
     currentColumn: ctx.statusIdsByColumn[currentStatusId] ?? null,
     assigneeName,
-    createdAt: new Date(fields.created),
+    createdAt,
     startedAt,
     completedAt,
     reopenedCount,
@@ -161,7 +167,11 @@ function deriveLifecycleEvents(
 /**
  * Derive startedAt and completedAt from lifecycle events.
  *
- * - startedAt: earliest transition into a startStatusId.
+ * - startedAt: earliest transition into a startStatusId. If no such transition
+ *   exists but the item's current status is a start status (e.g., the issue
+ *   was created directly in a start status with no changelog entry), fall back
+ *   to the issue's createdAt so the item is still treated as in-flow by
+ *   downstream projections (flow chart, filter dropdowns, aging thresholds).
  * - completedAt: timestamp of the latest `completed` event, but only when the
  *   item's current status is a done status (i.e., it has not been re-opened
  *   since its last completion). Items that never had a recorded `completed`
@@ -171,6 +181,7 @@ function deriveLifecycleEvents(
 function deriveTimestamps(
   events: NormalizedLifecycleEvent[],
   currentStatusId: string,
+  createdAt: Date,
   ctx: NormalizeContext,
 ): { startedAt: Date | null; completedAt: Date | null } {
   const startEvents = events.filter(
@@ -179,7 +190,12 @@ function deriveTimestamps(
       e.toStatusId != null &&
       ctx.startStatusIds.has(e.toStatusId),
   );
-  const startedAt = startEvents.length > 0 ? startEvents[0]!.changedAt : null;
+  const startedAt =
+    startEvents.length > 0
+      ? startEvents[0]!.changedAt
+      : ctx.startStatusIds.has(currentStatusId)
+        ? createdAt
+        : null;
 
   let completedAt: Date | null = null;
   if (ctx.doneStatusIds.has(currentStatusId)) {
