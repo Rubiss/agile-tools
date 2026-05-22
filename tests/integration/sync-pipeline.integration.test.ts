@@ -314,13 +314,15 @@ describe('queryCurrentWorkItems — DB integration', () => {
     await disconnectPrisma();
   });
 
-  it('returns only active(non-completed, non-excluded) items', async () => {
+  it('returns only in-flow (started, non-completed, non-excluded) items', async () => {
     const db = getPrismaClient();
     const items = await queryCurrentWorkItems(db, scopeId);
 
-    expect(items).toHaveLength(2);
-    const keys = items.map((i) => i.issueKey).sort();
-    expect(keys).toEqual(['PROJ-1', 'PROJ-2']);
+    // PROJ-2 has startedAt=null (pre-start) and is now excluded from the
+    // flow chart to match the scope's start/done boundaries used by aging
+    // thresholds and forecasts.
+    expect(items).toHaveLength(1);
+    expect(items[0]!.issueKey).toBe('PROJ-1');
   });
 
   it('computes positive ageInDays from startedAt for items that have started', async () => {
@@ -338,20 +340,14 @@ describe('queryCurrentWorkItems — DB integration', () => {
     }
   });
 
-  it('falls back to createdAt for age calculation when startedAt is null', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2025-01-13T12:00:00Z'));
-    try {
-      const db = getPrismaClient();
-      const items = await queryCurrentWorkItems(db, scopeId, { timezone: 'UTC' });
-      const proj2 = items.find((i) => i.issueKey === 'PROJ-2');
+  it('excludes pre-start items (startedAt is null) from results', async () => {
+    const db = getPrismaClient();
+    const items = await queryCurrentWorkItems(db, scopeId, { timezone: 'UTC' });
 
-      expect(proj2).toBeDefined();
-      expect(proj2!.startedAt).toBeNull();
-      expect(proj2!.ageInDays).toBeCloseTo(0.5, 5);
-    } finally {
-      vi.useRealTimers();
-    }
+    // PROJ-2 is in column "Review" but never transitioned into a configured
+    // startStatusId, so its startedAt is null and it must not appear on the
+    // flow chart. This mirrors the cycle-time boundary used by analytics.
+    expect(items.find((i) => i.issueKey === 'PROJ-2')).toBeUndefined();
   });
 
   it('maps currentColumn from the work item record', async () => {
@@ -440,6 +436,8 @@ describe('queryScopeFilterOptions — DB integration', () => {
           currentColumn: 'In Progress',
           directUrl: 'https://jira.example.internal/browse/FILT-1',
           createdAt: new Date(),
+          // startedAt set so the in-flow filter (startedAt IS NOT NULL) keeps this item.
+          startedAt: new Date(),
         },
         {
           scopeId,
@@ -455,6 +453,23 @@ describe('queryScopeFilterOptions — DB integration', () => {
           directUrl: 'https://jira.example.internal/browse/FILT-2',
           createdAt: new Date(),
         },
+        {
+          // Pre-start bug whose issue type appears ONLY on items with
+          // startedAt=null. Verifies that queryScopeFilterOptions excludes
+          // both the status AND the issue type for pre-start-only items.
+          scopeId,
+          lastSyncRunId: syncRunId,
+          jiraIssueId: 'F3',
+          issueKey: 'FILT-3',
+          summary: 'Pre-start bug',
+          issueTypeId: 'bug',
+          issueTypeName: 'Bug',
+          projectId: 'FILT',
+          currentStatusId: '5',
+          currentColumn: 'Backlog',
+          directUrl: 'https://jira.example.internal/browse/FILT-3',
+          createdAt: new Date(),
+        },
       ],
     });
   });
@@ -463,20 +478,23 @@ describe('queryScopeFilterOptions — DB integration', () => {
     await disconnectPrisma();
   });
 
-  it('returns distinct issue types present in active work items', async () => {
+  it('returns distinct issue types present in in-flow work items', async () => {
     const db = getPrismaClient();
     const opts = await queryScopeFilterOptions(db, scopeId);
 
+    // FILT-3 (Bug) has startedAt=null and must be excluded; only Story remains.
     expect(opts.issueTypes).toHaveLength(1);
     expect(opts.issueTypes[0]).toEqual({ id: 'story', name: 'Story' });
   });
 
-  it('returns distinct statuses (with column names) present in active items', async () => {
+  it('returns distinct statuses (with column names) present in in-flow items', async () => {
     const db = getPrismaClient();
     const opts = await queryScopeFilterOptions(db, scopeId);
 
+    // FILT-2 has startedAt=null (pre-start) so its status ("20" / Review)
+    // must not appear in the filter dropdown. Only FILT-1's status remains.
     const statusIds = opts.statuses.map((s) => s.id).sort();
-    expect(statusIds).toEqual(['10', '20']);
+    expect(statusIds).toEqual(['10']);
     const inProgress = opts.statuses.find((s) => s.id === '10');
     expect(inProgress?.name).toBe('In Progress');
   });
