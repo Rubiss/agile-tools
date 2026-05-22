@@ -5,6 +5,7 @@ import { mapScope } from '@/app/api/v1/admin/scopes/_lib';
 import { JiraConnectionForm, ValidateConnectionButton } from '@/components/admin/jira-connection-form';
 import { FlowScopeForm } from '@/components/admin/flow-scope-form';
 import { AuthRequiredPanel } from '@/components/app/auth-required-panel';
+import { Breadcrumbs } from '@/components/app/breadcrumbs';
 import {
   codeStyle,
   eyebrowStyle,
@@ -45,6 +46,7 @@ export default async function AdminJiraPage() {
   if (ctx.role !== 'admin') {
       return (
         <main style={pageShellStyle}>
+          <Breadcrumbs items={[{ label: 'Jira Setup' }]} />
           <section style={sectionCardStyle}>
           <p style={{ ...eyebrowStyle, color: palette.danger }}>Access Control</p>
           <h1 style={{ ...heroTitleStyle, fontSize: '2rem' }}>Administrator access required</h1>
@@ -80,6 +82,7 @@ export default async function AdminJiraPage() {
 
   return (
     <main style={pageShellStyle}>
+      <Breadcrumbs items={[{ label: 'Jira Setup' }]} />
       <section style={heroCardStyle}>
         <p style={eyebrowStyle}>Workspace Admin</p>
         <h1 style={heroTitleStyle}>Jira setup</h1>
