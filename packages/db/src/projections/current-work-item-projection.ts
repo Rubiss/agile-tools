@@ -54,8 +54,14 @@ export interface ScopeFilterOptions {
 const MS_PER_HOUR = 1000 * 60 * 60;
 
 /**
- * Query active (non-completed, non-excluded) work items for a scope with
- * computed projection fields.
+ * Query in-flow (started, non-completed, non-excluded) work items for a scope
+ * with computed projection fields.
+ *
+ * Only items that have transitioned into a startStatusId at some point (i.e.,
+ * have a non-null `startedAt`) are returned. Items still in pre-start statuses
+ * (e.g., Backlog / Triage / To Do that are not configured as a start status)
+ * are excluded so the flow analytics chart matches the scope boundaries used
+ * by aging-threshold and forecast calculations.
  *
  * Pass `dataVersion` (= the latest succeeded SyncRun id) to pin results to a
  * specific sync snapshot and exclude stale items that disappeared from the board.
@@ -72,6 +78,7 @@ export async function queryCurrentWorkItems(
     where: {
       scopeId,
       completedAt: null,
+      startedAt: { not: null },
       excludedReason: null,
       ...(options?.dataVersion ? { lastSyncRunId: options.dataVersion } : {}),
     },
@@ -137,7 +144,11 @@ export async function queryCurrentWorkItems(
 }
 
 /**
- * Derive distinct filter options from current active work items for a scope.
+ * Derive distinct filter options from in-flow work items for a scope.
+ *
+ * Mirrors the filter applied by `queryCurrentWorkItems` (started, non-completed,
+ * non-excluded) so the status dropdown does not surface pre-start statuses that
+ * would yield zero dots on the flow analytics chart.
  *
  * Pass `dataVersion` to pin to a specific sync snapshot (same semantics as
  * `queryCurrentWorkItems`).
@@ -151,6 +162,7 @@ export async function queryScopeFilterOptions(
     where: {
       scopeId,
       completedAt: null,
+      startedAt: { not: null },
       excludedReason: null,
       ...(options?.dataVersion ? { lastSyncRunId: options.dataVersion } : {}),
     },
