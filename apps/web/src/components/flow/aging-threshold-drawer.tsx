@@ -156,7 +156,7 @@ export function AgingThresholdDrawer({
               </h2>
               <p style={{ ...sectionCopyStyle, marginTop: '0.55rem', maxWidth: '28rem' }}>
                 Inputs and method used to derive the p50 / p70 / p85 cycle-time thresholds that
-                colour each item in the scatter plot.
+                color each item in the scatter plot.
               </p>
             </div>
             <button
@@ -216,7 +216,7 @@ export function AgingThresholdDrawer({
           <StepCard step={2} title="Percentile method">
             <div style={{ display: 'grid', gap: '0.75rem' }}>
               <p style={{ ...sectionCopyStyle, marginTop: 0 }}>
-                The completed cycle times are sorted ascending, then summarised with the
+                The completed cycle times are sorted ascending, then summarized with the
                 nearest-rank percentile method (0-indexed, rounded down).
               </p>
               <ol style={{ margin: 0, paddingLeft: '1.1rem', display: 'grid', gap: '0.55rem', color: palette.muted }}>
