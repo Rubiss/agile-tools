@@ -21,6 +21,8 @@ describe('getConfig', () => {
     delete process.env['LOG_LEVEL'];
     delete process.env['PORT'];
     delete process.env['DEFAULT_SYNC_INTERVAL_MINUTES'];
+    delete process.env['SYNC_PUBLISH_TRANSACTION_TIMEOUT_MS'];
+    delete process.env['SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS'];
 
     const config = getConfig();
 
@@ -28,6 +30,8 @@ describe('getConfig', () => {
     expect(config.LOG_LEVEL).toBe('info');
     expect(config.PORT).toBe(3000);
     expect(config.DEFAULT_SYNC_INTERVAL_MINUTES).toBe(10);
+    expect(config.SYNC_PUBLISH_TRANSACTION_TIMEOUT_MS).toBe(10 * 60 * 1000);
+    expect(config.SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS).toBe(30_000);
   });
 
   it('caches the parsed result until resetConfig is called', () => {

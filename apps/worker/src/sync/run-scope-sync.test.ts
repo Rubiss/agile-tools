@@ -35,7 +35,11 @@ const {
   return {
     jiraClientStub,
     loggerMock,
-    getConfigMock: vi.fn(() => ({ ENCRYPTION_KEY: 'test-encryption-key' })),
+    getConfigMock: vi.fn(() => ({
+      ENCRYPTION_KEY: 'test-encryption-key',
+      SYNC_PUBLISH_TRANSACTION_TIMEOUT_MS: 600_000,
+      SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS: 30_000,
+    })),
     decryptSecretMock: vi.fn(() => 'pat-123'),
     createJiraClientMock: vi.fn(() => jiraClientStub),
     getBoardDetailWithFilterIdMock: vi.fn(),
@@ -254,8 +258,9 @@ function createDb(options?: { doneStatusIds?: string[] }) {
       createMany: workItemLifecycleCreateMany,
     },
     syncWorkItemStage,
-    $transaction: vi.fn(async (callback: (tx: typeof transactionClient) => Promise<unknown>) =>
-      callback(transactionClient),
+    $transaction: vi.fn(
+      async (callback: (tx: typeof transactionClient) => Promise<unknown>) =>
+        callback(transactionClient),
     ),
   };
 
@@ -266,7 +271,11 @@ describe('runScopeSync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    getConfigMock.mockReturnValue({ ENCRYPTION_KEY: 'test-encryption-key' });
+    getConfigMock.mockReturnValue({
+      ENCRYPTION_KEY: 'test-encryption-key',
+      SYNC_PUBLISH_TRANSACTION_TIMEOUT_MS: 600_000,
+      SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS: 30_000,
+    });
     decryptSecretMock.mockReturnValue('pat-123');
     createJiraClientMock.mockReturnValue(jiraClientStub);
     getBoardDetailWithFilterIdMock.mockResolvedValue({
@@ -498,6 +507,31 @@ describe('runScopeSync', () => {
     await syncPromise;
 
     expect(db.workItem.upsert).toHaveBeenCalledTimes(11);
+  });
+
+  it('passes the configured publish transaction timeout and maxWait to Prisma', async () => {
+    getConfigMock.mockReturnValue({
+      ENCRYPTION_KEY: 'test-encryption-key',
+      SYNC_PUBLISH_TRANSACTION_TIMEOUT_MS: 123_456,
+      SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS: 7_890,
+    });
+    const db = createDb({ doneStatusIds: [] });
+    const boardIssue = makeIssue({
+      id: 'ISSUE-1',
+      key: 'PROJ-1',
+      projectId: 'proj-board',
+      statusId: '10',
+      statusName: 'In Progress',
+    });
+
+    streamBoardIssuesMock.mockReturnValue(issueStream(boardIssue));
+
+    await runScopeSync(db as unknown as Parameters<typeof runScopeSync>[0], 'run-1');
+
+    expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 123_456,
+      maxWait: 7_890,
+    });
   });
 
   it('cleans up staged work items when the run is superseded mid-stream', async () => {

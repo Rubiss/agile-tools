@@ -549,6 +549,16 @@ async function publishSyncedWorkItems(
   startedAt: Date,
   scopeId: string,
 ): Promise<boolean> {
+  const {
+    SYNC_PUBLISH_TRANSACTION_TIMEOUT_MS: publishTimeoutMs,
+    SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS: publishMaxWaitMs,
+  } = getConfig();
+  // The publish transaction is intentionally atomic: Flow analytics queries pin
+  // to the last succeeded SyncRun's dataVersion (= syncRunId), so the previous
+  // version remains fully visible until this transaction commits. Prisma's
+  // default 5 s interactive transaction timeout is not enough for large boards,
+  // so we raise it via config. The runtime is still bounded by the finite set
+  // of staged items.
   return db.$transaction(async (tx) => {
     await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
     const rows = await tx.$queryRaw<Array<{ id: string }>>`
@@ -667,5 +677,5 @@ async function publishSyncedWorkItems(
     });
 
     return true;
-  });
+  }, { timeout: publishTimeoutMs, maxWait: publishMaxWaitMs });
 }

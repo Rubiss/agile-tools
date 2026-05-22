@@ -11,6 +11,28 @@ const configSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   /** 5–15 minute default sync interval guard — scopes override this per board */
   DEFAULT_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(5).max(15).default(10),
+  /**
+   * Maximum runtime (ms) of the Prisma interactive transaction that publishes
+   * staged Jira sync results to `WorkItem`/`WorkItemLifecycleEvent`. Prisma's
+   * default of 5 s is not enough for large boards, where per-item upserts and
+   * lifecycle event inserts can take longer. Default: 10 minutes.
+   */
+  SYNC_PUBLISH_TRANSACTION_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(5_000)
+    .max(60 * 60 * 1000)
+    .default(10 * 60 * 1000),
+  /**
+   * Maximum time (ms) Prisma will wait to acquire a connection before starting
+   * the publish transaction. Default: 30 seconds.
+   */
+  SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(5 * 60 * 1000)
+    .default(30_000),
 });
 
 export type Config = z.infer<typeof configSchema>;
