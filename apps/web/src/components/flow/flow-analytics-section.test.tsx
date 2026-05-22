@@ -15,6 +15,33 @@ vi.mock('./work-item-detail-drawer', () => ({
   WorkItemDetailDrawer: () => null,
 }));
 
+vi.mock('./aging-threshold-drawer', () => ({
+  AgingThresholdDrawer: () => null,
+}));
+
+const STORAGE_PREFIX = 'agile-tools:flow-filters:v1:';
+const TEST_SCOPE_ID = '11111111-1111-4111-8111-111111111111';
+
+function emptyFlowResponse() {
+  return jsonResponse({
+    scopeId: TEST_SCOPE_ID,
+    dataVersion: 'sync-1',
+    syncedAt: new Date('2026-04-19T12:00:00Z').toISOString(),
+    historicalWindowDays: 90,
+    sampleSize: 0,
+    warnings: [],
+    agingModel: {
+      metricBasis: 'cycle_time',
+      p50: 0,
+      p70: 0,
+      p85: 0,
+      sampleSize: 0,
+      lowConfidenceReason: 'No completed stories in history.',
+    },
+    points: [],
+  });
+}
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -25,6 +52,11 @@ function jsonResponse(body: unknown): Response {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  try {
+    window.localStorage.clear();
+  } catch {
+    // ignore
+  }
 });
 
 describe('FlowAnalyticsSection', () => {
@@ -80,5 +112,139 @@ describe('FlowAnalyticsSection', () => {
     expect(requestUrl).toContain('statusIds=10');
     expect(requestUrl).toContain('statusIds=11');
     expect(requestUrl).not.toContain('statusIds=20');
+  });
+
+  describe('filter persistence (per-scope localStorage)', () => {
+    const filterOptions = {
+      historicalWindows: [30, 60, 90, 180],
+      issueTypes: [
+        { id: 'story', name: 'Story' },
+        { id: 'bug', name: 'Bug' },
+      ],
+      statuses: [
+        { id: '10', name: 'Backlog' },
+        { id: '20', name: 'In Progress' },
+      ],
+    };
+
+    it('rehydrates persisted filters and uses them on the first fetch', async () => {
+      window.localStorage.setItem(
+        `${STORAGE_PREFIX}${TEST_SCOPE_ID}`,
+        JSON.stringify({
+          historicalWindowDays: 30,
+          issueTypeIds: ['story'],
+          statusIds: ['10'],
+          agingOnly: true,
+          onHoldOnly: false,
+        }),
+      );
+
+      const fetchMock = vi.fn().mockResolvedValue(emptyFlowResponse());
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      const url = String(fetchMock.mock.calls[0]?.[0]);
+      expect(url).toContain('historicalWindowDays=30');
+      expect(url).toContain('issueTypeIds=story');
+      expect(url).toContain('statusIds=10');
+      expect(url).toContain('agingOnly=true');
+    });
+
+    it('discards persisted filters when every stored id has dropped from current options', async () => {
+      window.localStorage.setItem(
+        `${STORAGE_PREFIX}${TEST_SCOPE_ID}`,
+        JSON.stringify({
+          historicalWindowDays: 90,
+          issueTypeIds: ['removed-type'],
+          statusIds: [],
+          agingOnly: false,
+          onHoldOnly: false,
+        }),
+      );
+
+      const fetchMock = vi.fn().mockResolvedValue(emptyFlowResponse());
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      // Falls back to defaults — stale issueTypeIds must NOT leak into the request.
+      const url = String(fetchMock.mock.calls[0]?.[0]);
+      expect(url).not.toContain('issueTypeIds=removed-type');
+      // Stale entry should be removed from storage so it cannot be replayed later.
+      expect(window.localStorage.getItem(`${STORAGE_PREFIX}${TEST_SCOPE_ID}`)).toBeNull();
+    });
+
+    it('rejects poisoned historicalWindowDays values and falls back to defaults', async () => {
+      window.localStorage.setItem(
+        `${STORAGE_PREFIX}${TEST_SCOPE_ID}`,
+        JSON.stringify({
+          historicalWindowDays: -1,
+          issueTypeIds: [],
+          statusIds: [],
+          agingOnly: false,
+          onHoldOnly: false,
+        }),
+      );
+
+      const fetchMock = vi.fn().mockResolvedValue(emptyFlowResponse());
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      const url = String(fetchMock.mock.calls[0]?.[0]);
+      expect(url).not.toContain('historicalWindowDays=-1');
+      expect(url).toContain('historicalWindowDays=90');
+    });
+
+    it('survives invalid JSON in storage without throwing and uses defaults', async () => {
+      window.localStorage.setItem(`${STORAGE_PREFIX}${TEST_SCOPE_ID}`, 'not-json');
+
+      const fetchMock = vi.fn().mockResolvedValue(emptyFlowResponse());
+      vi.stubGlobal('fetch', fetchMock);
+
+      expect(() =>
+        render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />),
+      ).not.toThrow();
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+      const url = String(fetchMock.mock.calls[0]?.[0]);
+      expect(url).toContain('historicalWindowDays=90');
+    });
+
+    it('persists filter changes back to localStorage under the scope-specific key', async () => {
+      const user = userEvent.setup();
+      const fetchMock = vi.fn().mockResolvedValue(emptyFlowResponse());
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      await user.click(screen.getByRole('checkbox', { name: /aging only/i }));
+
+      await waitFor(() => {
+        const stored = window.localStorage.getItem(`${STORAGE_PREFIX}${TEST_SCOPE_ID}`);
+        expect(stored).not.toBeNull();
+        const parsed = JSON.parse(stored as string);
+        expect(parsed.agingOnly).toBe(true);
+      });
+    });
   });
 });

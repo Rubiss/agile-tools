@@ -116,14 +116,15 @@ export function ViewerLocalTime({
 
   const relative = formatRelative(Date.now(), targetMs, rtf);
   const localAbsolute = dtf.format(new Date(targetMs));
+  const hoverTooltip = `${localAbsolute} — ${scopeFallback} (scope timezone: ${scopeTimezone})`;
 
   return (
     <time
       dateTime={timestamp}
-      title={tooltip}
+      title={hoverTooltip}
       aria-label={`${relative}, ${localAbsolute} (${scopeFallback} in scope timezone ${scopeTimezone})`}
     >
-      {relative} · {localAbsolute}
+      {relative}
     </time>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { checkboxChipStyle, fieldLabelStyle, insetPanelStyle, selectStyle, selectionControlStyle } from '@/components/app/chrome';
+import { checkboxChipStyle, fieldLabelStyle, insetPanelStyle, palette, selectStyle, selectionControlStyle } from '@/components/app/chrome';
 
 /** Active filter state passed around between FlowFiltersPanel and consumers. */
 export interface FlowFilters {
@@ -75,97 +75,128 @@ export function FlowFiltersPanel({
       style={{
         ...insetPanelStyle,
         display: 'flex',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        alignItems: 'flex-start',
+        flexDirection: 'column',
+        gap: '0.85rem',
         fontSize: '0.875rem',
       }}
     >
-      {/* Timeframe picker */}
-      <div>
-        <label
-          htmlFor="flow-timeframe"
-          style={{ ...fieldLabelStyle, marginBottom: '0.35rem' }}
-        >
-          Timeframe
-        </label>
-        <select
-          id="flow-timeframe"
-          value={filters.historicalWindowDays}
-          onChange={(e) => onChange({ ...filters, historicalWindowDays: Number(e.target.value) })}
-          disabled={disabled}
-          style={{ ...selectStyle, minWidth: '7rem', width: 'auto', padding: '0.65rem 0.85rem' }}
-          aria-label="Historical timeframe"
-        >
-          {(filterOptions.historicalWindows ?? DEFAULT_WINDOWS).map((w) => (
-            <option key={w} value={w}>
-              {w}d
-            </option>
-          ))}
-        </select>
+      {/* Population: what data is in the analysis */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '1rem',
+          alignItems: 'flex-start',
+        }}
+      >
+        {/* Timeframe picker */}
+        <div>
+          <label
+            htmlFor="flow-timeframe"
+            style={{ ...fieldLabelStyle, marginBottom: '0.35rem' }}
+          >
+            Timeframe
+          </label>
+          <select
+            id="flow-timeframe"
+            value={filters.historicalWindowDays}
+            onChange={(e) => onChange({ ...filters, historicalWindowDays: Number(e.target.value) })}
+            disabled={disabled}
+            style={{ ...selectStyle, minWidth: '7rem', width: 'auto', padding: '0.65rem 0.85rem' }}
+            aria-label="Historical timeframe"
+          >
+            {(filterOptions.historicalWindows ?? DEFAULT_WINDOWS).map((w) => (
+              <option key={w} value={w}>
+                {w}d
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Issue-type checkboxes */}
+        {filterOptions.issueTypes && filterOptions.issueTypes.length > 0 && (
+          <div>
+            <p style={{ ...fieldLabelStyle, margin: '0 0 0.35rem' }}>
+              Issue Types
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              {filterOptions.issueTypes.map((t) => (
+                <label
+                  key={t.id}
+                  style={checkboxChipStyle(filters.issueTypeIds.includes(t.id))}
+                >
+                  <input
+                    type="checkbox"
+                    checked={filters.issueTypeIds.includes(t.id)}
+                    onChange={() =>
+                      onChange({ ...filters, issueTypeIds: toggle(filters.issueTypeIds, t.id) })
+                    }
+                    disabled={disabled}
+                    style={selectionControlStyle}
+                    aria-label={`Filter by ${t.name}`}
+                  />
+                  {t.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Workflow-status checkboxes */}
+        {groupedStatuses.length > 0 && (
+          <div>
+            <p style={{ ...fieldLabelStyle, margin: '0 0 0.35rem' }}>Status</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              {groupedStatuses.map((statusGroup) => (
+                <label
+                  key={statusGroup.name}
+                  style={checkboxChipStyle(statusGroup.statusIds.every((id) => filters.statusIds.includes(id)))}
+                >
+                  <input
+                    type="checkbox"
+                    checked={statusGroup.statusIds.every((id) => filters.statusIds.includes(id))}
+                    onChange={() =>
+                      onChange({
+                        ...filters,
+                        statusIds: toggleMany(filters.statusIds, statusGroup.statusIds),
+                      })
+                    }
+                    disabled={disabled}
+                    style={selectionControlStyle}
+                    aria-label={`Filter by status ${statusGroup.name}`}
+                  />
+                  {statusGroup.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Issue-type checkboxes */}
-      {filterOptions.issueTypes && filterOptions.issueTypes.length > 0 && (
-        <div>
-          <p style={{ ...fieldLabelStyle, margin: '0 0 0.35rem' }}>
-            Issue Types
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {filterOptions.issueTypes.map((t) => (
-              <label
-                key={t.id}
-                style={checkboxChipStyle(filters.issueTypeIds.includes(t.id))}
-              >
-                <input
-                  type="checkbox"
-                  checked={filters.issueTypeIds.includes(t.id)}
-                  onChange={() =>
-                    onChange({ ...filters, issueTypeIds: toggle(filters.issueTypeIds, t.id) })
-                  }
-                  disabled={disabled}
-                  style={selectionControlStyle}
-                  aria-label={`Filter by ${t.name}`}
-                />
-                {t.name}
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Hairline divider between population and highlight sections */}
+      <div
+        aria-hidden="true"
+        style={{ height: 1, background: palette.line, width: '100%' }}
+      />
 
-      {/* Workflow-status checkboxes */}
-      {groupedStatuses.length > 0 && (
-        <div>
-          <p style={{ ...fieldLabelStyle, margin: '0 0 0.35rem' }}>Status</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {groupedStatuses.map((statusGroup) => (
-              <label
-                key={statusGroup.name}
-                style={checkboxChipStyle(statusGroup.statusIds.every((id) => filters.statusIds.includes(id)))}
-              >
-                <input
-                  type="checkbox"
-                  checked={statusGroup.statusIds.every((id) => filters.statusIds.includes(id))}
-                  onChange={() =>
-                    onChange({
-                      ...filters,
-                      statusIds: toggleMany(filters.statusIds, statusGroup.statusIds),
-                    })
-                  }
-                  disabled={disabled}
-                  style={selectionControlStyle}
-                  aria-label={`Filter by status ${statusGroup.name}`}
-                />
-                {statusGroup.name}
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Aging / on-hold toggles */}
-      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+      {/* Highlight: narrow what is shown from the population above */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          alignItems: 'center',
+        }}
+      >
+        <p
+          style={{
+            ...fieldLabelStyle,
+            margin: 0,
+            marginRight: '0.25rem',
+          }}
+        >
+          Highlight
+        </p>
         <label style={checkboxChipStyle(filters.agingOnly)}>
           <input
             type="checkbox"

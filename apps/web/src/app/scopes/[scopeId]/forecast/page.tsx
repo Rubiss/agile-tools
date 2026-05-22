@@ -7,6 +7,7 @@ import type { ForecastResponse, ForecastRequest } from '@agile-tools/shared/cont
 import { ThroughputChart } from '@/components/forecast/throughput-chart';
 import { ForecastForm } from '@/components/forecast/forecast-form';
 import { ForecastResults } from '@/components/forecast/forecast-results';
+import { Breadcrumbs } from '@/components/app/breadcrumbs';
 import {
   heroCardStyle,
   heroCopyStyle,
@@ -22,7 +23,6 @@ import {
   statLabelStyle,
   statValueStyle,
   eyebrowStyle,
-  linkStyle,
   noticeStyle,
   codeStyle,
 } from '@/components/app/chrome';
@@ -109,6 +109,12 @@ export default function ForecastPage() {
 
   return (
     <main style={pageShellStyle}>
+      <Breadcrumbs
+        items={[
+          { label: 'Scope', href: `/scopes/${scopeId}` },
+          { label: 'Forecast' },
+        ]}
+      />
       <section style={heroCardStyle}>
         <p style={eyebrowStyle}>Forecasting</p>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -116,9 +122,6 @@ export default function ForecastPage() {
             <h1 style={heroTitleStyle}>Forecast</h1>
             <p style={heroCopyStyle}>
               Review recent throughput and run Monte Carlo forecasts against the pinned snapshot for this scope.
-            </p>
-            <p style={{ margin: '1rem 0 0' }}>
-              <a href={`/scopes/${scopeId}`} style={linkStyle}>← Back to Scope</a>
             </p>
           </div>
         </div>

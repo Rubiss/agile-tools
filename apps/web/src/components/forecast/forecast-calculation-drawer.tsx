@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import type { ThroughputDay, ThroughputResponse } from '@agile-tools/shared/contracts/api';
 import type { ForecastRequest, ForecastResponse } from '@agile-tools/shared/contracts/forecast';
@@ -235,8 +236,9 @@ export function ForecastCalculationDrawer({
   const largestBucket = Math.max(...sampleSummary.distribution.map((bucket) => bucket.dayCount), 1);
 
   if (!open) return null;
+  if (typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -449,6 +451,7 @@ export function ForecastCalculationDrawer({
           </StepCard>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

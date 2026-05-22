@@ -372,9 +372,12 @@ test('forecast page has back-to-scope navigation link', async ({ page }) => {
 
   await page.goto(`/scopes/${scopeId}/forecast`);
 
-  await expect(page.getByText('← Back to Scope')).toBeVisible({ timeout: 10_000 });
-  const backLink = page.getByRole('link', { name: '← Back to Scope' });
-  await expect(backLink).toHaveAttribute('href', `/scopes/${scopeId}`);
+  // The back-to-scope affordance now lives in the breadcrumb ("Scope" crumb).
+  const breadcrumbScopeLink = page
+    .getByRole('navigation', { name: 'Breadcrumb' })
+    .getByRole('link', { name: 'Scope' });
+  await expect(breadcrumbScopeLink).toBeVisible({ timeout: 10_000 });
+  await expect(breadcrumbScopeLink).toHaveAttribute('href', `/scopes/${scopeId}`);
 });
 
 // ─── Test: Real API — POST /forecasts returns a valid forecast response ───────

@@ -187,9 +187,6 @@ describe('ScopePage', () => {
       expect(text).toMatch(/ago|in \d|now|second|minute|hour|day|month|year/i);
       expect(text).not.toBe(formattedTimestamp);
     });
-
-    // The "finished" prefix still wraps the timestamp.
-    expect(screen.getByText(/finished/i)).toBeVisible();
   });
 
   it('keeps showing the last finished sync timestamp while a newer sync is running', async () => {
@@ -209,7 +206,6 @@ describe('ScopePage', () => {
       document.querySelectorAll<HTMLTimeElement>(`time[datetime="${isoTimestamp}"]`),
     );
     expect(timestampNodes.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/last finished/i)).toBeVisible();
     expect(screen.getByText('running')).toBeVisible();
     expect(screen.queryByText('No sync yet')).not.toBeInTheDocument();
   });

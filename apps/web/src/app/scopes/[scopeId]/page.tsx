@@ -7,6 +7,7 @@ import { TriggerSyncButton } from '@/components/admin/trigger-sync-button';
 import { HoldDefinitionForm } from '@/components/admin/hold-definition-form';
 import { FlowAnalyticsSection } from '@/components/flow/flow-analytics-section';
 import { AuthRequiredPanel } from '@/components/app/auth-required-panel';
+import { Breadcrumbs } from '@/components/app/breadcrumbs';
 import { ViewerLocalTime } from '@/components/app/viewer-local-time';
 import {
   type FlowScope,
@@ -16,7 +17,6 @@ import {
   codeStyle,
   eyebrowStyle,
   heroCardStyle,
-  heroCopyStyle,
   heroTitleStyle,
   noticeStyle,
   pageShellStyle,
@@ -30,7 +30,6 @@ import {
   statLabelStyle,
   statValueStyle,
   tonePillStyle,
-  linkStyle,
   insetPanelStyle,
   palette,
 } from '@/components/app/chrome';
@@ -184,41 +183,49 @@ export default async function ScopePage({
     )
     : null;
 
+  const navActions: { label: string; href: string; variant?: 'default' | 'primary' }[] = [];
+  if (filterOptions) {
+    navActions.push({ label: 'Forecast', href: `/scopes/${scopeId}/forecast` });
+  }
+  if (ctx.role === 'admin') {
+    navActions.push({ label: 'Jira Setup', href: '/admin/jira' });
+  }
+
   return (
     <main style={pageShellStyle}>
-      <section style={heroCardStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
-          <div>
+      <Breadcrumbs items={[{ label: 'Scope' }]} actions={navActions} />
+      <section style={{ ...heroCardStyle, padding: '1.1rem 1.4rem', borderRadius: '20px', borderTopWidth: '1px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem', flexWrap: 'wrap' }}>
             <p style={eyebrowStyle}>Flow Scope</p>
-            <h1 style={heroTitleStyle}>{scope.boardName ?? `Board ${scope.boardId}`}</h1>
-            <p style={heroCopyStyle}>
-              Track active work, sync health, and aging signals for this board snapshot.
-            </p>
-            <p style={{ margin: '0.9rem 0 0', color: palette.muted, fontSize: '0.92rem' }}>
-              Scope ID <span style={codeStyle}>{scope.id}</span>
-            </p>
+            <h1 style={{ ...heroTitleStyle, margin: 0, fontSize: 'clamp(1.35rem, 2.4vw, 1.75rem)', lineHeight: 1.15, letterSpacing: '-0.02em' }}>
+              {scope.boardName ?? `Board ${scope.boardId}`}
+            </h1>
+            <span style={{ color: palette.soft, fontSize: '0.78rem' }}>
+              <span style={codeStyle}>{scope.id}</span>
+            </span>
           </div>
           <span style={tonePillStyle(scopeTone)}>{scope.status}</span>
         </div>
 
-        <div style={statGridStyle}>
-          <article style={statCardStyle}>
-            <p style={statLabelStyle}>Connection Health</p>
-            <p style={{ ...statValueStyle, color: healthColor[connectionHealth] ?? palette.ink }}>{connectionHealth}</p>
+        <div style={{ ...statGridStyle, gap: '0.6rem', marginTop: '0.9rem', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+          <article style={{ ...statCardStyle, padding: '0.55rem 0.75rem' }}>
+            <p style={{ ...statLabelStyle, fontSize: '0.66rem' }}>Connection Health</p>
+            <p style={{ ...statValueStyle, fontSize: '0.95rem', margin: '0.2rem 0 0', color: healthColor[connectionHealth] ?? palette.ink }}>{connectionHealth}</p>
           </article>
-          <article style={statCardStyle}>
-            <p style={statLabelStyle}>Last Sync</p>
-            <p style={{ ...statValueStyle, fontSize: '1rem' }}>
+          <article style={{ ...statCardStyle, padding: '0.55rem 0.75rem' }}>
+            <p style={{ ...statLabelStyle, fontSize: '0.66rem' }}>Last Sync</p>
+            <p style={{ ...statValueStyle, fontSize: '0.85rem', margin: '0.2rem 0 0' }}>
               {lastSyncTimeNode ?? 'No sync yet'}
             </p>
           </article>
-          <article style={statCardStyle}>
-            <p style={statLabelStyle}>Timezone</p>
-            <p style={statValueStyle}>{scope.timezone}</p>
+          <article style={{ ...statCardStyle, padding: '0.55rem 0.75rem' }}>
+            <p style={{ ...statLabelStyle, fontSize: '0.66rem' }}>Timezone</p>
+            <p style={{ ...statValueStyle, fontSize: '0.95rem', margin: '0.2rem 0 0' }}>{scope.timezone}</p>
           </article>
-          <article style={statCardStyle}>
-            <p style={statLabelStyle}>Cadence</p>
-            <p style={statValueStyle}>Every {scope.syncIntervalMinutes}m</p>
+          <article style={{ ...statCardStyle, padding: '0.55rem 0.75rem' }}>
+            <p style={{ ...statLabelStyle, fontSize: '0.66rem' }}>Cadence</p>
+            <p style={{ ...statValueStyle, fontSize: '0.95rem', margin: '0.2rem 0 0' }}>Every {scope.syncIntervalMinutes}m</p>
           </article>
         </div>
       </section>
@@ -235,59 +242,6 @@ export default async function ScopePage({
           </section>
         )}
 
-        <section style={sectionCardStyle}>
-          <div style={sectionHeaderRowStyle}>
-            <div>
-              <h2 style={sectionTitleStyle}>Connection and sync</h2>
-              <p style={sectionCopyStyle}>Current health, most recent sync outcome, and the active snapshot identifier.</p>
-            </div>
-            <span style={tonePillStyle(connectionTone)}>{connectionHealth}</span>
-          </div>
-
-        {displayedSyncStatus ? (
-          <div style={{ display: 'grid', gap: '0.85rem' }}>
-            <div style={insetPanelStyle}>
-              <p style={{ margin: 0, color: palette.muted, fontSize: '0.9rem' }}>
-                Last sync{' '}
-                <strong
-                  style={{
-                    color:
-                      displayedSyncStatus === 'succeeded'
-                        ? palette.positive
-                        : displayedSyncStatus === 'failed'
-                          ? palette.danger
-                          : palette.accentStrong,
-                  }}
-                >
-                  {displayedSyncStatus}
-                </strong>
-                {lastSyncTimeNode && (
-                  <span style={{ marginLeft: '0.45rem', color: palette.soft }}>
-                    {activeSync ? 'last finished' : 'finished'} {lastSyncTimeNode}
-                  </span>
-                )}
-              </p>
-            </div>
-            {lastSync?.dataVersion && (
-              <div style={insetPanelStyle}>
-                <p style={{ margin: 0, color: palette.muted, fontSize: '0.9rem' }}>
-                  Data version <span style={codeStyle}>{lastSync.dataVersion}</span>
-                </p>
-              </div>
-            )}
-            {displayedSyncErrorCode && (
-              <p style={{ margin: 0, color: palette.danger, fontSize: '0.875rem' }}>
-                Error: {displayedSyncErrorCode}
-                {displayedSyncErrorSummary && ` — ${displayedSyncErrorSummary}`}
-              </p>
-            )}
-          </div>
-        ) : (
-          <p style={sectionCopyStyle}>No sync runs yet.</p>
-        )}
-        {ctx.role === 'admin' && <TriggerSyncButton scopeId={scopeId} />}
-        </section>
-
         {filterOptions && (
           <section style={sectionCardStyle}>
             <div style={sectionHeaderRowStyle}>
@@ -303,13 +257,15 @@ export default async function ScopePage({
                 ...(filterOptions.statuses !== undefined && { statuses: filterOptions.statuses }),
                 ...(filterOptions.historicalWindows !== undefined && { historicalWindows: filterOptions.historicalWindows }),
               }}
+              {...(ctx.role === 'admin' && {
+                footer: (
+                  <HoldDefinitionForm
+                    scopeId={scopeId}
+                    {...(filterOptions.statuses !== undefined && { availableStatuses: filterOptions.statuses })}
+                  />
+                ),
+              })}
             />
-            {ctx.role === 'admin' && (
-              <HoldDefinitionForm
-                scopeId={scopeId}
-                {...(filterOptions.statuses !== undefined && { availableStatuses: filterOptions.statuses })}
-              />
-            )}
           </section>
         )}
 
@@ -342,18 +298,58 @@ export default async function ScopePage({
           </div>
         </section>
 
-        <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          {ctx.role === 'admin' && (
-            <a href="/admin/jira" style={linkStyle}>
-              ← Back to Jira Setup
-            </a>
-          )}
-        {filterOptions && (
-          <a href={`/scopes/${scopeId}/forecast`} style={linkStyle}>
-            📊 Forecast →
-          </a>
+        <section style={sectionCardStyle}>
+          <div style={sectionHeaderRowStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Connection and sync</h2>
+              <p style={sectionCopyStyle}>Current health, most recent sync outcome, and the active snapshot identifier.</p>
+            </div>
+            <span style={tonePillStyle(connectionTone)}>{connectionHealth}</span>
+          </div>
+
+        {displayedSyncStatus ? (
+          <div style={{ display: 'grid', gap: '0.85rem' }}>
+            <div style={insetPanelStyle}>
+              <p style={{ margin: 0, color: palette.muted, fontSize: '0.9rem' }}>
+                Last sync{' '}
+                <strong
+                  style={{
+                    color:
+                      displayedSyncStatus === 'succeeded'
+                        ? palette.positive
+                        : displayedSyncStatus === 'failed'
+                          ? palette.danger
+                          : palette.accentStrong,
+                  }}
+                >
+                  {displayedSyncStatus}
+                </strong>
+                {lastSyncTimeNode && (
+                  <span style={{ marginLeft: '0.45rem', color: palette.soft }}>
+                    {lastSyncTimeNode}
+                  </span>
+                )}
+              </p>
+            </div>
+            {lastSync?.dataVersion && (
+              <div style={insetPanelStyle}>
+                <p style={{ margin: 0, color: palette.muted, fontSize: '0.9rem' }}>
+                  Data version <span style={codeStyle}>{lastSync.dataVersion}</span>
+                </p>
+              </div>
+            )}
+            {displayedSyncErrorCode && (
+              <p style={{ margin: 0, color: palette.danger, fontSize: '0.875rem' }}>
+                Error: {displayedSyncErrorCode}
+                {displayedSyncErrorSummary && ` — ${displayedSyncErrorSummary}`}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p style={sectionCopyStyle}>No sync runs yet.</p>
         )}
-        </div>
+        {ctx.role === 'admin' && <TriggerSyncButton scopeId={scopeId} />}
+        </section>
       </div>
     </main>
   );

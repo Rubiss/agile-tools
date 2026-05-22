@@ -1,6 +1,6 @@
 :root {
-  --font-body: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
-  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-body: "Aptos", "Segoe UI Variable Text", "Segoe UI", "Arial", sans-serif;
+  --font-display: "Aptos", "Segoe UI Variable Display", "Segoe UI", "Arial", sans-serif;
   --font-label: "Consolas", "Courier New", monospace;
 
   --color-canvas: #f3eee4;

@@ -1,17 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { FlowAnalyticsResponse } from '@agile-tools/shared/contracts/api';
 import { shapeFlowAnalytics } from '@/server/views/flow-analytics';
 import { FlowFiltersPanel } from './flow-filters';
 import type { FlowFilters, FilterOptions } from './flow-filters';
 import { AgingScatterPlot } from './aging-scatter-plot';
+import { AgingThresholdDrawer } from './aging-threshold-drawer';
 import { WorkItemDetailDrawer } from './work-item-detail-drawer';
-import { codeStyle, insetPanelStyle, noticeStyle, palette, tonePillStyle } from '@/components/app/chrome';
+import { buttonStyle, codeStyle, insetPanelStyle, noticeStyle, palette, tonePillStyle } from '@/components/app/chrome';
 
 interface FlowAnalyticsSectionProps {
   scopeId: string;
   filterOptions: FilterOptions;
+  /** Optional content rendered between the analytics chart and the aging-thresholds summary. */
+  footer?: ReactNode;
 }
 
 const DEFAULT_FILTERS: FlowFilters = {
@@ -22,7 +25,109 @@ const DEFAULT_FILTERS: FlowFilters = {
   onHoldOnly: false,
 };
 
-export function FlowAnalyticsSection({ scopeId, filterOptions }: FlowAnalyticsSectionProps) {
+const FILTER_STORAGE_PREFIX = 'agile-tools:flow-filters:v1:';
+
+function storageKey(scopeId: string): string {
+  return `${FILTER_STORAGE_PREFIX}${scopeId}`;
+}
+
+/**
+ * Read previously-persisted filters for the given scope. Returns `null` when no
+ * value is stored, parsing fails, or every persisted id has dropped out of the
+ * current filter options (e.g. the scope's issue types changed).
+ */
+/** Hard upper bound on persisted window to prevent localStorage-poisoned values reaching the API. */
+const MAX_HISTORICAL_WINDOW_DAYS = 3650;
+
+function discardStoredFilters(scopeId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(storageKey(scopeId));
+  } catch {
+    // Storage disabled — non-fatal.
+  }
+}
+
+function loadStoredFilters(scopeId: string, options: FilterOptions): FlowFilters | null {
+  if (typeof window === 'undefined') return null;
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(storageKey(scopeId));
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    discardStoredFilters(scopeId);
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    discardStoredFilters(scopeId);
+    return null;
+  }
+  const candidate = parsed as Partial<Record<keyof FlowFilters, unknown>>;
+
+  const validIssueTypeIds = new Set((options.issueTypes ?? []).map((t) => t.id));
+  const validStatusIds = new Set((options.statuses ?? []).map((s) => s.id));
+  const validWindows = new Set(options.historicalWindows ?? []);
+
+  const issueTypeIdsRaw = Array.isArray(candidate.issueTypeIds)
+    ? candidate.issueTypeIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  const issueTypeIds = issueTypeIdsRaw.filter((id) => validIssueTypeIds.has(id));
+  // If every persisted issue-type filter has dropped out of the current options
+  // (board schema change, etc.), discard the entry rather than silently widening
+  // the filter from "only stories" to "everything".
+  if (issueTypeIdsRaw.length > 0 && issueTypeIds.length === 0) {
+    discardStoredFilters(scopeId);
+    return null;
+  }
+
+  const statusIdsRaw = Array.isArray(candidate.statusIds)
+    ? candidate.statusIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  const statusIds = statusIdsRaw.filter((id) => validStatusIds.has(id));
+  if (statusIdsRaw.length > 0 && statusIds.length === 0) {
+    discardStoredFilters(scopeId);
+    return null;
+  }
+
+  const hwd = candidate.historicalWindowDays;
+  const hwdValid =
+    typeof hwd === 'number'
+    && Number.isInteger(hwd)
+    && hwd > 0
+    && hwd <= MAX_HISTORICAL_WINDOW_DAYS
+    && (validWindows.size === 0 || validWindows.has(hwd));
+
+  if (!hwdValid) {
+    discardStoredFilters(scopeId);
+    return null;
+  }
+
+  return {
+    historicalWindowDays: hwd,
+    issueTypeIds,
+    statusIds,
+    agingOnly: candidate.agingOnly === true,
+    onHoldOnly: candidate.onHoldOnly === true,
+  };
+}
+
+function saveStoredFilters(scopeId: string, filters: FlowFilters): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(storageKey(scopeId), JSON.stringify(filters));
+  } catch {
+    // Quota/disabled storage — non-fatal.
+  }
+}
+
+export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAnalyticsSectionProps) {
   const [filters, setFilters] = useState<FlowFilters>({
     ...DEFAULT_FILTERS,
     historicalWindowDays: filterOptions.historicalWindows?.[2] ?? 90,
@@ -35,8 +140,17 @@ export function FlowAnalyticsSection({ scopeId, filterOptions }: FlowAnalyticsSe
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [selectedIssueKey, setSelectedIssueKey] = useState<string | undefined>(undefined);
 
+  // Aging-threshold explanation drawer.
+  const [thresholdDrawerOpen, setThresholdDrawerOpen] = useState(false);
+
+  // Monotonic request-sequence guard: if a slower in-flight request resolves
+  // after a newer one has been issued (e.g. rapid filter changes), the stale
+  // response is dropped instead of clobbering the UI.
+  const requestSeqRef = useRef(0);
+
   const fetchFlow = useCallback(
     async (f: FlowFilters) => {
+      const mySeq = ++requestSeqRef.current;
       setLoading(true);
       setError(null);
       try {
@@ -48,24 +162,44 @@ export function FlowAnalyticsSection({ scopeId, filterOptions }: FlowAnalyticsSe
         if (f.onHoldOnly) params.set('onHoldOnly', 'true');
 
         const res = await fetch(`/api/v1/scopes/${scopeId}/flow?${params.toString()}`);
+        if (mySeq !== requestSeqRef.current) return;
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as FlowAnalyticsResponse;
+        if (mySeq !== requestSeqRef.current) return;
         setResponse(data);
       } catch (err) {
+        if (mySeq !== requestSeqRef.current) return;
         setError(err instanceof Error ? err.message : 'Failed to load flow analytics.');
       } finally {
-        setLoading(false);
+        if (mySeq === requestSeqRef.current) setLoading(false);
       }
     },
     [scopeId],
   );
 
   useEffect(() => {
-    void fetchFlow(filters);
-  }, []);
+    const stored = loadStoredFilters(scopeId, filterOptions);
+    if (stored) {
+      setFilters(stored);
+      void fetchFlow(stored);
+    } else {
+      // No usable stored filters: derive defaults from the *current* scope's
+      // options. Avoid reusing the previous scope's filter state on client nav.
+      const defaults: FlowFilters = {
+        ...DEFAULT_FILTERS,
+        historicalWindowDays: filterOptions.historicalWindows?.[2] ?? 90,
+      };
+      setFilters(defaults);
+      void fetchFlow(defaults);
+    }
+    // filterOptions/fetchFlow intentionally omitted: this effect models "scope
+    // changed" and should not re-fire if a parent re-renders with a new options
+    // object reference. fetchFlow already closes over scopeId.
+  }, [scopeId]);
 
   function handleFilterChange(next: FlowFilters) {
     setFilters(next);
+    saveStoredFilters(scopeId, next);
     void fetchFlow(next);
   }
 
@@ -78,30 +212,6 @@ export function FlowAnalyticsSection({ scopeId, filterOptions }: FlowAnalyticsSe
 
   return (
     <div>
-      {/* Aging model summary */}
-      {response && (
-        <div style={{ ...insetPanelStyle, marginBottom: '0.85rem', fontSize: '0.85rem', color: palette.muted }}>
-          {response.agingModel.sampleSize > 0 ? (
-            <span>
-              Thresholds (p50 / p70 / p85):{' '}
-              <strong style={{ color: palette.ink }}>
-                {response.agingModel.p50.toFixed(1)}d / {response.agingModel.p70.toFixed(1)}d / {response.agingModel.p85.toFixed(1)}d
-              </strong>{' '}from {response.agingModel.sampleSize} completed stories
-              <span style={{ marginLeft: '0.55rem' }}>
-                <span style={codeStyle}>{response.sampleSize} active items</span>
-              </span>
-            </span>
-          ) : (
-            <span>No aging thresholds yet (sync more data)</span>
-          )}
-          {response.agingModel.lowConfidenceReason && (
-            <span style={{ marginLeft: '0.5rem', color: palette.warning }}>
-              ⚠ {response.agingModel.lowConfidenceReason}
-            </span>
-          )}
-        </div>
-      )}
-
       {/* Filters */}
       <FlowFiltersPanel
         filterOptions={filterOptions}
@@ -175,6 +285,51 @@ export function FlowAnalyticsSection({ scopeId, filterOptions }: FlowAnalyticsSe
         ))}
       </div>
 
+      {/* Footer slot (e.g. admin hold-definition form) */}
+      {footer && <div style={{ marginTop: '0.85rem' }}>{footer}</div>}
+
+      {/* Aging model summary (moved to bottom) */}
+      {response && (
+        <div
+          style={{
+            ...insetPanelStyle,
+            marginTop: '0.85rem',
+            fontSize: '0.85rem',
+            color: palette.muted,
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: '0.5rem 0.75rem',
+          }}
+        >
+          {response.agingModel.sampleSize > 0 ? (
+            <span>
+              Thresholds (p50 / p70 / p85):{' '}
+              <strong style={{ color: palette.ink }}>
+                {response.agingModel.p50.toFixed(1)}d / {response.agingModel.p70.toFixed(1)}d / {response.agingModel.p85.toFixed(1)}d
+              </strong>{' '}from {response.agingModel.sampleSize} completed stories
+              <span style={{ marginLeft: '0.55rem' }}>
+                <span style={codeStyle}>{response.sampleSize} active items</span>
+              </span>
+            </span>
+          ) : (
+            <span>No aging thresholds yet (sync more data)</span>
+          )}
+          {response.agingModel.lowConfidenceReason && (
+            <span style={{ color: palette.warning }}>
+              ⚠ {response.agingModel.lowConfidenceReason}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setThresholdDrawerOpen(true)}
+            style={{ ...buttonStyle('secondary'), marginLeft: 'auto' }}
+          >
+            How these thresholds were calculated
+          </button>
+        </div>
+      )}
+
       {/* Work item detail drawer */}
       <WorkItemDetailDrawer
         scopeId={scopeId}
@@ -185,6 +340,18 @@ export function FlowAnalyticsSection({ scopeId, filterOptions }: FlowAnalyticsSe
           setSelectedIssueKey(undefined);
         }}
       />
+
+      {/* Aging threshold explanation drawer */}
+      {response && (
+        <AgingThresholdDrawer
+          open={thresholdDrawerOpen}
+          agingModel={response.agingModel}
+          historicalWindowDays={response.historicalWindowDays}
+          activeItemCount={response.sampleSize}
+          dataVersion={response.dataVersion}
+          onClose={() => setThresholdDrawerOpen(false)}
+        />
+      )}
     </div>
   );
 }
