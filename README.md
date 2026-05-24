@@ -102,10 +102,12 @@ Worker metrics bind to `METRICS_HOST` and `METRICS_PORT`. `METRICS_PORT` takes p
 uses `PORT` so Kubernetes-style environments can assign the scrape port with the standard platform variable, then falls
 back to `9464`. The Docker Compose files set `WORKER_METRICS_PORT` to publish the worker scrape port on the host.
 
-Metrics include runtime scrape/process data, web request counts and durations by method/static route/status/outcome,
-forecast and flow analytics reads, manual sync enqueues, worker job and sync runs, queue depth snapshots, Jira REST
-request durations, and Prisma query durations. Labels intentionally avoid workspace IDs, issue keys, user data, raw URLs,
-SQL, or JQL.
+Metrics include runtime scrape/process data, standard OpenTelemetry `http.server.request.duration` histograms for web
+requests, forecast and flow analytics reads, manual sync enqueues, worker job and sync runs, queue depth snapshots, Jira
+REST request durations, and Prisma query durations. In Prometheus text, the HTTP series is emitted as
+`http_server_request_duration` with unit `s`, plus count, sum, and second-based bucket series; derive web error rates from
+its `_count` series filtered by `http_response_status_code` or `error_type`. Labels intentionally avoid workspace IDs,
+issue keys, user data, raw URLs, SQL, or JQL.
 
 ## Docker Runtime
 

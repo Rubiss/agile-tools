@@ -22,6 +22,7 @@ describe('metrics', () => {
     recordHttpRequest({
       method: 'GET',
       route: '/api/test',
+      scheme: 'https',
       statusCode: 500,
       durationSeconds: 0.25,
     });
@@ -43,9 +44,13 @@ describe('metrics', () => {
     const { body } = await collectPrometheusMetrics();
 
     expect(body).toContain('service_name="agile-tools-test"');
-    expect(body).toContain('agile_tools_http_requests_total');
-    expect(body).toContain('route="/api/test"');
-    expect(body).toContain('outcome="server_error"');
+    expect(body).toContain('http_server_request_duration');
+    expect(body).toContain('http_route="/api/test"');
+    expect(body).toContain('http_response_status_code="500"');
+    expect(body).toContain('url_scheme="https"');
+    expect(body).toContain('error_type="500"');
+    expect(body).toContain('le="0.005"');
+    expect(body).not.toContain('agile_tools_http_requests_total');
     expect(body).toContain('agile_tools_forecast_runs_total');
     expect(body).toContain('agile_tools_forecast_duration_seconds');
     expect(body).toContain('agile_tools_flow_items_returned');
