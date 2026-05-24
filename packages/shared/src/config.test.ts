@@ -20,6 +20,8 @@ describe('getConfig', () => {
     process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
     delete process.env['LOG_LEVEL'];
     delete process.env['PORT'];
+    delete process.env['METRICS_HOST'];
+    delete process.env['METRICS_PORT'];
     delete process.env['DEFAULT_SYNC_INTERVAL_MINUTES'];
     delete process.env['SYNC_PUBLISH_TRANSACTION_TIMEOUT_MS'];
     delete process.env['SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS'];
@@ -29,9 +31,35 @@ describe('getConfig', () => {
     expect(config.NODE_ENV).toBe('test');
     expect(config.LOG_LEVEL).toBe('info');
     expect(config.PORT).toBe(3000);
+    expect(config.METRICS_HOST).toBe('0.0.0.0');
+    expect(config.METRICS_PORT).toBe(9464);
     expect(config.DEFAULT_SYNC_INTERVAL_MINUTES).toBe(10);
     expect(config.SYNC_PUBLISH_TRANSACTION_TIMEOUT_MS).toBe(10 * 60 * 1000);
     expect(config.SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS).toBe(30_000);
+  });
+
+  it('uses PORT as the metrics port fallback for Kubernetes-style worker environments', () => {
+    process.env['DATABASE_URL'] = 'postgresql://localhost:5432/agile_tools';
+    process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
+    process.env['PORT'] = '8080';
+    delete process.env['METRICS_PORT'];
+
+    const config = getConfig();
+
+    expect(config.PORT).toBe(8080);
+    expect(config.METRICS_PORT).toBe(8080);
+  });
+
+  it('lets METRICS_PORT override PORT for standalone metrics servers', () => {
+    process.env['DATABASE_URL'] = 'postgresql://localhost:5432/agile_tools';
+    process.env['ENCRYPTION_KEY'] = '12345678901234567890123456789012';
+    process.env['PORT'] = '8080';
+    process.env['METRICS_PORT'] = '9464';
+
+    const config = getConfig();
+
+    expect(config.PORT).toBe(8080);
+    expect(config.METRICS_PORT).toBe(9464);
   });
 
   it('caches the parsed result until resetConfig is called', () => {

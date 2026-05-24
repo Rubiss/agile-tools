@@ -27,6 +27,7 @@ import {
   selectNamedValues,
 } from '../_lib';
 import { enqueueScopeSyncJob } from '@/server/queue';
+import { withHttpMetrics } from '@/server/route-metrics';
 
 function sameStringSet(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
@@ -138,7 +139,7 @@ function syncInProgressResponse(syncRunId: string): Response {
   );
 }
 
-export async function PUT(
+async function handlePUT(
   req: NextRequest,
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<Response> {
@@ -442,7 +443,7 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
+async function handleDELETE(
   req: NextRequest,
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<Response> {
@@ -505,3 +506,6 @@ export async function DELETE(
     );
   }
 }
+
+export const PUT = withHttpMetrics('PUT', '/api/v1/admin/scopes/[scopeId]', handlePUT);
+export const DELETE = withHttpMetrics('DELETE', '/api/v1/admin/scopes/[scopeId]', handleDELETE);

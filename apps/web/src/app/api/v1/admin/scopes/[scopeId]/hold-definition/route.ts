@@ -7,8 +7,9 @@ import { requireAdminContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { assertTrustedMutationRequest, enforceRateLimit } from '@/server/request-security';
 import { requireScope } from '../../_lib';
+import { withHttpMetrics } from '@/server/route-metrics';
 
-export async function GET(
+async function handleGET(
   _req: NextRequest,
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<Response> {
@@ -41,7 +42,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
+async function handlePUT(
   req: NextRequest,
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<Response> {
@@ -101,6 +102,9 @@ export async function PUT(
     );
   }
 }
+
+export const GET = withHttpMetrics('GET', '/api/v1/admin/scopes/[scopeId]/hold-definition', handleGET);
+export const PUT = withHttpMetrics('PUT', '/api/v1/admin/scopes/[scopeId]/hold-definition', handlePUT);
 
 function mapHoldDefinition(
   scopeId: string,

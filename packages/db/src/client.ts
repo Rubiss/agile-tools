@@ -1,7 +1,11 @@
-import { PrismaClient } from '@prisma/client';
-import { resolveDatabaseUrlFromEnv } from '@agile-tools/shared';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { recordDatabaseQuery, resolveDatabaseUrlFromEnv } from '@agile-tools/shared';
 
 let _client: PrismaClient | undefined;
+
+function queryOperation(query: string): string {
+  return query.match(/^\s*(\w+)/)?.[1]?.toUpperCase() ?? 'UNKNOWN';
+}
 
 export function getPrismaClient(): PrismaClient {
   if (!_client) {
@@ -11,12 +15,20 @@ export function getPrismaClient(): PrismaClient {
     // contexts which only need database access (e.g. some tests) don't have to
     // satisfy unrelated config like ENCRYPTION_KEY.
     resolveDatabaseUrlFromEnv();
-    _client = new PrismaClient({
-      log:
-        process.env['NODE_ENV'] === 'development'
-          ? ['query', 'warn', 'error']
-          : ['warn', 'error'],
+    const client = new PrismaClient({
+      log: [
+        { emit: 'event', level: 'query' },
+        { emit: 'stdout', level: 'warn' },
+        { emit: 'stdout', level: 'error' },
+      ],
     });
+    client.$on('query', (event: Prisma.QueryEvent) => {
+      recordDatabaseQuery({
+        operation: queryOperation(event.query),
+        durationSeconds: event.duration / 1000,
+      });
+    });
+    _client = client;
   }
   return _client;
 }

@@ -57,7 +57,11 @@ services:
     environment:
       AGILE_TOOLS_ROLE: worker
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/agile_tools
+      METRICS_HOST: 0.0.0.0
+      METRICS_PORT: ${WORKER_METRICS_PORT:-9464}
       NODE_ENV: production
+    ports:
+      - "${WORKER_METRICS_PORT:-9464}:${WORKER_METRICS_PORT:-9464}"
 
 volumes:
   postgres_data:

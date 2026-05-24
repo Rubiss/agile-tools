@@ -1,5 +1,11 @@
 import { type NextRequest } from 'next/server';
-import { countWorkingDaysBetweenDates, InvalidTimeZoneError, logger } from '@agile-tools/shared';
+import {
+  countWorkingDaysBetweenDates,
+  InvalidTimeZoneError,
+  logger,
+  metricsClock,
+  recordForecastRun,
+} from '@agile-tools/shared';
 import {
   getPrismaClient,
   getFlowScope,
@@ -30,11 +36,17 @@ import { assertTrustedMutationRequest, enforceRateLimit } from '@/server/request
 import { buildInvalidScopeTimezoneProblem } from '../../_problems';
 import { shapeForecastResponse } from '@/server/views/forecast-response';
 import { getCompletedStoryCount, getForecastSampleDays } from '@/server/views/throughput-sample';
+import { withHttpMetrics } from '@/server/route-metrics';
 
-export async function POST(
+async function handlePOST(
   req: NextRequest,
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<Response> {
+  const metricStartedAt = metricsClock.now();
+  let metricType = 'unknown';
+  let metricResult = 'error';
+  let metricIterations: number | undefined;
+  let metricSampleSize: number | undefined;
   let requestedScopeId: string | undefined;
 
   try {
@@ -52,6 +64,7 @@ export async function POST(
 
     const scope = await getFlowScope(db, ctx.workspaceId, scopeId);
     if (!scope) {
+      metricResult = 'not_found';
       return Response.json(
         { code: 'NOT_FOUND', message: 'Flow scope not found.' },
         { status: 404 },
@@ -61,6 +74,7 @@ export async function POST(
     const body: unknown = await req.json().catch(() => null);
     const parsed = ForecastRequestSchema.safeParse(body);
     if (!parsed.success) {
+      metricResult = 'invalid_request';
       return Response.json(
         {
           code: 'INVALID_REQUEST',
@@ -72,12 +86,15 @@ export async function POST(
     }
 
     const request = parsed.data;
+    metricType = request.type;
     const iterations = request.iterations ?? DEFAULT_MONTE_CARLO_ITERATIONS;
+    metricIterations = iterations;
 
     // Validate how_many targetDate is in the future relative to the scope timezone.
     if (request.type === 'how_many') {
       const todayLocal = formatDateInTimezone(new Date(), scope.timezone);
       if (request.targetDate <= todayLocal) {
+        metricResult = 'invalid_request';
         return Response.json(
           {
             code: 'INVALID_REQUEST',
@@ -100,6 +117,7 @@ export async function POST(
         request.dataVersion,
       );
       if (!syncRun?.dataVersion || !syncRun.finishedAt) {
+        metricResult = 'not_found';
         return Response.json(
           {
             code: 'NOT_FOUND',
@@ -119,6 +137,8 @@ export async function POST(
     }
 
     if (!effectiveDataVersion || !syncedAt) {
+      metricResult = 'no_data';
+      metricSampleSize = 0;
       return Response.json({
         scopeId,
         dataVersion: '',
@@ -145,6 +165,8 @@ export async function POST(
 
     const cached = await lookupForecastCache(db, scopeId, requestHash, effectiveDataVersion);
     if (cached) {
+      metricResult = 'cache_hit';
+      metricSampleSize = cached.sampleSize;
       return Response.json(
         shapeForecastResponse({
           scopeId,
@@ -169,6 +191,7 @@ export async function POST(
     const completeDays = getForecastSampleDays(allDays);
     const historicalDailyThroughput = completeDays.map((d) => d.completedStoryCount);
     const sampleSize = getCompletedStoryCount(completeDays);
+    metricSampleSize = sampleSize;
 
     // Run Monte Carlo simulation.
     let monteCarlo: MonteCarloForecastResult;
@@ -226,6 +249,7 @@ export async function POST(
         });
       });
 
+    metricResult = 'computed';
     return Response.json(
       shapeForecastResponse({
         scopeId,
@@ -237,8 +261,12 @@ export async function POST(
       }) satisfies ForecastResponse,
     );
   } catch (err) {
-    if (err instanceof ResponseError) return err.response;
+    if (err instanceof ResponseError) {
+      metricResult = 'response_error';
+      return err.response;
+    }
     if (err instanceof InvalidTimeZoneError) {
+      metricResult = 'invalid_timezone';
       logger.warn('Forecast request blocked by invalid scope timezone', {
         scopeId: requestedScopeId,
         timezone: err.timezone,
@@ -254,5 +282,15 @@ export async function POST(
       { code: 'INTERNAL_ERROR', message: 'An internal error occurred.' },
       { status: 500 },
     );
+  } finally {
+    recordForecastRun({
+      type: metricType,
+      result: metricResult,
+      durationSeconds: metricsClock.durationSecondsSince(metricStartedAt),
+      ...(metricIterations !== undefined ? { iterations: metricIterations } : {}),
+      ...(metricSampleSize !== undefined ? { sampleSize: metricSampleSize } : {}),
+    });
   }
 }
+
+export const POST = withHttpMetrics('POST', '/api/v1/scopes/[scopeId]/forecasts', handlePOST);

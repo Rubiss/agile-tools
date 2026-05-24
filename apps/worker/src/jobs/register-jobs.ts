@@ -1,7 +1,7 @@
 import { getQueue, QUEUE_NAMES } from '../lib/queue.js';
 import { getPrismaClient, createSyncRun } from '@agile-tools/db';
 import type { PrismaClient } from '@agile-tools/db';
-import { logger } from '@agile-tools/shared';
+import { logger, metricsClock, recordWorkerJob } from '@agile-tools/shared';
 import type { Job } from 'pg-boss';
 import { runScopeSync } from '../sync/run-scope-sync.js';
 import { registerScopeSyncDispatch } from './schedule-scope-syncs.js';
@@ -40,7 +40,9 @@ async function handleScopeSync(jobs: Job<ScopeSyncJobData>[]): Promise<void> {
   const db = getPrismaClient();
 
   for (const job of jobs) {
+    const jobStartedAt = metricsClock.now();
     const { scopeId, syncRunId: existingSyncRunId, trigger = 'scheduled' } = job.data;
+    let jobResult = 'completed';
 
     let syncRunId: string;
 
@@ -59,6 +61,7 @@ async function handleScopeSync(jobs: Job<ScopeSyncJobData>[]): Promise<void> {
     try {
       await runScopeSync(db, syncRunId);
     } catch (err) {
+      jobResult = 'failed';
       // runScopeSync already marks the SyncRun as failed and logs the error.
       // Log here too so the job failure is visible at the queue level.
       logger.error('Scope sync job failed', {
@@ -68,6 +71,12 @@ async function handleScopeSync(jobs: Job<ScopeSyncJobData>[]): Promise<void> {
         error: err instanceof Error ? err.message : String(err),
       });
     } finally {
+      recordWorkerJob({
+        queue: QUEUE_NAMES.SCOPE_SYNC,
+        trigger,
+        result: jobResult,
+        durationSeconds: metricsClock.durationSecondsSince(jobStartedAt),
+      });
       untrackSyncRun();
     }
   }

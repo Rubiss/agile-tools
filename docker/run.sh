@@ -53,7 +53,7 @@ start_worker() {
 
 start_all() {
   cd /app/apps/worker
-  node dist/index.js "$@" &
+  METRICS_PORT="${METRICS_PORT:-9464}" node dist/index.js "$@" &
   worker_pid=$!
 
   cd /app/apps/web

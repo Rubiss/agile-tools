@@ -12,8 +12,9 @@ import type {
 } from '@agile-tools/shared/contracts/api';
 import { requireWorkspaceContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
+import { withHttpMetrics } from '@/server/route-metrics';
 
-export async function GET(
+async function handleGET(
   _req: NextRequest,
   { params }: { params: Promise<{ scopeId: string; workItemId: string }> },
 ): Promise<Response> {
@@ -83,3 +84,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withHttpMetrics('GET', '/api/v1/scopes/[scopeId]/items/[workItemId]', handleGET);

@@ -9,6 +9,10 @@ const configSchema = z.object({
   /** Opaque session secret for workspace auth (Next.js web only) */
   SESSION_SECRET: z.string().min(32).optional(),
   PORT: z.coerce.number().int().positive().default(3000),
+  /** Host interface for standalone metrics servers such as the worker runtime. */
+  METRICS_HOST: z.string().min(1).default('0.0.0.0'),
+  /** Port for standalone metrics servers. Falls back to PORT when METRICS_PORT is unset. */
+  METRICS_PORT: z.coerce.number().int().positive().default(9464),
   /** 5–15 minute default sync interval guard — scopes override this per board */
   DEFAULT_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(5).max(15).default(10),
   /**
@@ -38,6 +42,13 @@ const configSchema = z.object({
 export type Config = z.infer<typeof configSchema>;
 
 let _config: Config | undefined;
+
+function buildConfigInput(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    METRICS_PORT: process.env['METRICS_PORT'] ?? process.env['PORT'] ?? '9464',
+  };
+}
 
 /**
  * Resolve the database URL from a configurable source variable.
@@ -90,7 +101,7 @@ export function getConfig(): Config {
 
   resolveDatabaseUrlFromEnv();
 
-  const result = configSchema.safeParse(process.env);
+  const result = configSchema.safeParse(buildConfigInput());
   if (!result.success) {
     throw new Error(
       `Invalid environment configuration:\n${result.error.issues

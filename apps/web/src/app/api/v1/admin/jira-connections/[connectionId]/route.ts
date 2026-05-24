@@ -6,8 +6,9 @@ import { requireAdminContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { assertTrustedMutationRequest, enforceRateLimit } from '@/server/request-security';
 import { requireJiraConnection, mapConnection } from '../_lib';
+import { withHttpMetrics } from '@/server/route-metrics';
 
-export async function PUT(
+async function handlePUT(
   req: NextRequest,
   { params }: { params: Promise<{ connectionId: string }> },
 ): Promise<Response> {
@@ -76,3 +77,5 @@ export async function PUT(
     );
   }
 }
+
+export const PUT = withHttpMetrics('PUT', '/api/v1/admin/jira-connections/[connectionId]', handlePUT);

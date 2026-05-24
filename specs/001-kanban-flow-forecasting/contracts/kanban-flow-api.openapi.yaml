@@ -22,8 +22,10 @@ paths:
       tags: [Operations]
       summary: Expose OpenTelemetry metrics for Prometheus scraping
       description: |
-        Returns public Prometheus text-format metrics emitted by the web runtime. Deployments that do not
-        want this endpoint broadly reachable should restrict access at the network or reverse-proxy layer.
+        Returns public Prometheus text-format metrics emitted by the web runtime, including scrape/runtime
+        data, HTTP request counts and durations, flow analytics reads, forecasting runs, and manual sync
+        enqueues. Deployments that do not want this endpoint broadly reachable should restrict access at
+        the network or reverse-proxy layer.
       security: []
       responses:
         '200':

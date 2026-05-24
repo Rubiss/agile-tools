@@ -3,8 +3,9 @@ import { logger } from '@agile-tools/shared';
 import { requireWorkspaceContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { buildScopeSummary } from '@/server/views/scope-summary';
+import { withHttpMetrics } from '@/server/route-metrics';
 
-export async function GET(
+async function handleGET(
   _req: NextRequest,
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<Response> {
@@ -32,3 +33,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withHttpMetrics('GET', '/api/v1/scopes/[scopeId]', handleGET);

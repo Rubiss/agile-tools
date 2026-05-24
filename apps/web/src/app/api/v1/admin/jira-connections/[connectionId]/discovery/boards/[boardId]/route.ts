@@ -4,8 +4,9 @@ import { getBoardDetail } from '@agile-tools/jira-client';
 import { requireAdminContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { requireJiraConnection, createClientForConnection, normalizeJiraError } from '../../../../_lib';
+import { withHttpMetrics } from '@/server/route-metrics';
 
-export async function GET(
+async function handleGET(
   _req: NextRequest,
   { params }: { params: Promise<{ connectionId: string; boardId: string }> },
 ): Promise<Response> {
@@ -55,3 +56,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withHttpMetrics('GET', '/api/v1/admin/jira-connections/[connectionId]/discovery/boards/[boardId]', handleGET);

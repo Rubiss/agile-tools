@@ -6,8 +6,9 @@ import { requireAdminContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { assertTrustedMutationRequest, enforceRateLimit } from '@/server/request-security';
 import { mapConnection } from './_lib';
+import { withHttpMetrics } from '@/server/route-metrics';
 
-export async function POST(req: NextRequest): Promise<Response> {
+async function handlePOST(req: NextRequest): Promise<Response> {
   try {
     const ctx = await requireAdminContext();
     assertTrustedMutationRequest(req);
@@ -55,3 +56,5 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 }
+
+export const POST = withHttpMetrics('POST', '/api/v1/admin/jira-connections', handlePOST);

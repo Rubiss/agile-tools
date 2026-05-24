@@ -15,6 +15,7 @@ const {
   updateConnectionHealthAfterSyncMock,
   normalizeJiraIssueMock,
   rebuildScopeProjectionsMock,
+  recordSyncRunMock,
   MockJiraClientError,
 } = vi.hoisted(() => {
   class MockJiraClientError extends Error {
@@ -51,6 +52,7 @@ const {
     updateConnectionHealthAfterSyncMock: vi.fn(),
     normalizeJiraIssueMock: vi.fn(),
     rebuildScopeProjectionsMock: vi.fn(),
+    recordSyncRunMock: vi.fn(),
     MockJiraClientError,
   };
 });
@@ -63,6 +65,11 @@ vi.mock('@agile-tools/shared', () => ({
   getConfig: getConfigMock,
   decryptSecret: decryptSecretMock,
   logger: loggerMock,
+  metricsClock: {
+    now: vi.fn(() => 1000),
+    durationSecondsSince: vi.fn(() => 0.5),
+  },
+  recordSyncRun: recordSyncRunMock,
 }));
 
 vi.mock('@agile-tools/jira-client', () => ({

@@ -1,5 +1,6 @@
 import pRetry, { AbortError } from 'p-retry';
 import pLimit from 'p-limit';
+import { metricsClock, recordJiraRequest } from '@agile-tools/shared';
 
 const CONCURRENCY_LIMIT = 3;
 const RETRY_ATTEMPTS = 3;
@@ -26,6 +27,19 @@ export interface FetchOptions {
   params?: Record<string, string | number | boolean>;
 }
 
+function jiraOperation(path: string): string {
+  if (path === '/rest/api/2/myself') return 'myself';
+  if (path === '/rest/api/2/serverInfo') return 'server_info';
+  if (path === '/rest/agile/1.0/board') return 'board_list';
+  if (/^\/rest\/agile\/1\.0\/board\/[^/]+\/issue$/.test(path)) return 'board_issues';
+  if (/^\/rest\/agile\/1\.0\/board\/[^/]+\/configuration$/.test(path)) return 'board_configuration';
+  if (/^\/rest\/api\/2\/issue\/[^/]+\/changelog$/.test(path)) return 'issue_changelog';
+  if (/^\/rest\/api\/2\/issue\/[^/]+$/.test(path)) return 'issue_detail';
+  if (path === '/rest/api/2/search') return 'jql_search';
+  if (path === '/rest/api/2/status') return 'status_list';
+  return 'other';
+}
+
 export class JiraClient {
   private readonly limiter = pLimit(CONCURRENCY_LIMIT);
   readonly baseUrl: string;
@@ -49,11 +63,30 @@ export class JiraClient {
     return this.limiter(() =>
       pRetry(
         async () => {
-          const response = await fetch(url.toString(), {
-            headers: {
-              Authorization: `Bearer ${this.pat}`,
-              Accept: 'application/json',
-            },
+          const operation = jiraOperation(path);
+          const requestStartedAt = metricsClock.now();
+          let response: Response;
+          try {
+            response = await fetch(url.toString(), {
+              headers: {
+                Authorization: `Bearer ${this.pat}`,
+                Accept: 'application/json',
+              },
+            });
+          } catch (error) {
+            recordJiraRequest({
+              operation,
+              result: 'network_error',
+              durationSeconds: metricsClock.durationSecondsSince(requestStartedAt),
+            });
+            throw error;
+          }
+
+          recordJiraRequest({
+            operation,
+            result: response.ok ? 'success' : response.status === 429 ? 'rate_limited' : 'error',
+            statusCode: response.status,
+            durationSeconds: metricsClock.durationSecondsSince(requestStartedAt),
           });
 
           if (response.status === 429) {

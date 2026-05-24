@@ -1,5 +1,5 @@
 import { type NextRequest } from 'next/server';
-import { logger } from '@agile-tools/shared';
+import { logger, metricsClock, recordFlowRead } from '@agile-tools/shared';
 import {
   getPrismaClient,
   getFlowScope,
@@ -11,14 +11,19 @@ import {
 import type { FlowAnalyticsResponse, AgingModel, FlowPoint, Warning } from '@agile-tools/shared/contracts/api';
 import { requireWorkspaceContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
+import { withHttpMetrics } from '@/server/route-metrics';
 
 const DEFAULT_HISTORICAL_WINDOW = 90;
 const LOW_CONFIDENCE_SAMPLE = 30;
 
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<Response> {
+  const metricStartedAt = metricsClock.now();
+  let metricResult = 'error';
+  let metricItemCount: number | undefined;
+
   try {
     const ctx = await requireWorkspaceContext();
     const { scopeId } = await params;
@@ -27,6 +32,7 @@ export async function GET(
     // Verify the scope belongs to this workspace.
     const scope = await getFlowScope(db, ctx.workspaceId, scopeId);
     if (!scope) {
+      metricResult = 'not_found';
       return Response.json(
         { code: 'NOT_FOUND', message: 'Flow scope not found.' },
         { status: 404 },
@@ -53,6 +59,8 @@ export async function GET(
     const syncedAt = lastSucceeded?.finishedAt;
 
     if (!effectiveDataVersion || !syncedAt) {
+      metricResult = 'no_data';
+      metricItemCount = 0;
       return Response.json({
         scopeId,
         dataVersion: '',
@@ -142,6 +150,8 @@ export async function GET(
       agingZone: item.agingZone,
       jiraUrl: item.directUrl,
     }));
+    metricResult = 'success';
+    metricItemCount = points.length;
 
     return Response.json({
       scopeId,
@@ -154,7 +164,10 @@ export async function GET(
       points,
     } satisfies FlowAnalyticsResponse);
   } catch (err) {
-    if (err instanceof ResponseError) return err.response;
+    if (err instanceof ResponseError) {
+      metricResult = 'response_error';
+      return err.response;
+    }
     logger.error('Failed to fetch flow analytics', {
       error: err instanceof Error ? err.message : String(err),
     });
@@ -162,5 +175,13 @@ export async function GET(
       { code: 'INTERNAL_ERROR', message: 'An internal error occurred.' },
       { status: 500 },
     );
+  } finally {
+    recordFlowRead({
+      result: metricResult,
+      durationSeconds: metricsClock.durationSecondsSince(metricStartedAt),
+      ...(metricItemCount !== undefined ? { itemCount: metricItemCount } : {}),
+    });
   }
 }
+
+export const GET = withHttpMetrics('GET', '/api/v1/scopes/[scopeId]/flow', handleGET);

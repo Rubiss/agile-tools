@@ -1,6 +1,12 @@
 import type { PrismaClient } from '@agile-tools/db';
 import { DEFAULT_COMPLETED_WINDOW_DAYS } from '@agile-tools/db';
-import { getConfig, decryptSecret, logger } from '@agile-tools/shared';
+import {
+  getConfig,
+  decryptSecret,
+  logger,
+  metricsClock,
+  recordSyncRun,
+} from '@agile-tools/shared';
 import type { JiraClient } from '@agile-tools/jira-client';
 import {
   JiraClientError,
@@ -104,10 +110,32 @@ async function cleanupStagedWorkItems(db: PrismaClient, syncRunId: string): Prom
  * and on completion updates it to `succeeded` or `failed`.
  */
 export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise<void> {
+  const syncStartedAt = metricsClock.now();
   const syncRun = await db.syncRun.findUnique({ where: { id: syncRunId } });
   if (!syncRun) {
     logger.error('SyncRun not found; skipping', { syncRunId });
+    recordSyncRun({
+      trigger: 'unknown',
+      result: 'skipped',
+      errorCode: 'SYNC_RUN_NOT_FOUND',
+      durationSeconds: metricsClock.durationSecondsSince(syncStartedAt),
+      itemCount: 0,
+    });
     return;
+  }
+  const trigger = syncRun.trigger;
+  let metricRecorded = false;
+
+  function recordSyncMetric(result: string, errorCode?: string, itemCount = 0): void {
+    if (metricRecorded) return;
+    metricRecorded = true;
+    recordSyncRun({
+      trigger,
+      result,
+      durationSeconds: metricsClock.durationSecondsSince(syncStartedAt),
+      itemCount,
+      ...(errorCode !== undefined ? { errorCode } : {}),
+    });
   }
 
   const claimedStartedAt = new Date();
@@ -122,6 +150,7 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
       syncRunId,
       currentStatus: syncRun.status,
     });
+    recordSyncMetric('skipped', 'SYNC_RUN_NOT_QUEUED');
     return;
   }
   await cleanupStagedWorkItems(db, syncRunId);
@@ -153,6 +182,7 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
         scopeId: scope.id,
         scopeStatus: scope.status,
       });
+      recordSyncMetric('canceled', 'SCOPE_NOT_ACTIVE');
       return;
     }
 
@@ -192,6 +222,7 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
         return;
       }
       logger.info('Scope sync canceled due to board drift', { syncRunId, scopeId: scope.id });
+      recordSyncMetric('canceled', 'BOARD_DRIFT_DETECTED');
       return;
     }
 
@@ -304,6 +335,7 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
       scope.id,
     );
     if (!succeeded) {
+      recordSyncMetric('skipped', 'SYNC_RUN_NOT_RUNNING', processedIssueIds.size);
       return;
     }
 
@@ -331,6 +363,7 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
       scopeId: scope.id,
       projectCount: projectIdsSet.size,
     });
+    recordSyncMetric('succeeded', undefined, processedIssueIds.size);
   } catch (err) {
     // Map errors to deterministic codes so the health updater can classify failures.
     let errorCode: string;
@@ -384,6 +417,7 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
     }
 
     logger.error('Scope sync failed', { syncRunId, errorCode, errorSummary });
+    recordSyncMetric('failed', errorCode);
     throw err;
   }
 }

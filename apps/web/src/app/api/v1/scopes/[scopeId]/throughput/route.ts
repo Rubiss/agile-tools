@@ -1,5 +1,5 @@
 import { type NextRequest } from 'next/server';
-import { InvalidTimeZoneError, logger } from '@agile-tools/shared';
+import { InvalidTimeZoneError, logger, metricsClock, recordThroughputRead } from '@agile-tools/shared';
 import {
   getPrismaClient,
   getFlowScope,
@@ -12,13 +12,18 @@ import { requireWorkspaceContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { getForecastSampleSize } from '@/server/views/throughput-sample';
 import { buildInvalidScopeTimezoneProblem } from '../../_problems';
+import { withHttpMetrics } from '@/server/route-metrics';
 
 const DEFAULT_HISTORICAL_WINDOW = 90;
 
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<Response> {
+  const metricStartedAt = metricsClock.now();
+  let metricResult = 'error';
+  let metricDayCount: number | undefined;
+  let metricSampleSize: number | undefined;
   let requestedScopeId: string | undefined;
 
   try {
@@ -29,6 +34,7 @@ export async function GET(
 
     const scope = await getFlowScope(db, ctx.workspaceId, scopeId);
     if (!scope) {
+      metricResult = 'not_found';
       return Response.json(
         { code: 'NOT_FOUND', message: 'Flow scope not found.' },
         { status: 404 },
@@ -70,6 +76,9 @@ export async function GET(
     }
 
     if (!effectiveDataVersion || !syncedAt) {
+      metricResult = 'no_data';
+      metricDayCount = 0;
+      metricSampleSize = 0;
       return Response.json({
         scopeId,
         dataVersion: '',
@@ -89,6 +98,9 @@ export async function GET(
     });
 
     const sampleSize = getForecastSampleSize(days);
+  metricResult = 'success';
+  metricDayCount = days.length;
+  metricSampleSize = sampleSize;
 
     return Response.json({
       scopeId,
@@ -100,8 +112,12 @@ export async function GET(
       days,
     } satisfies ThroughputResponse);
   } catch (err) {
-    if (err instanceof ResponseError) return err.response;
+    if (err instanceof ResponseError) {
+      metricResult = 'response_error';
+      return err.response;
+    }
     if (err instanceof InvalidTimeZoneError) {
+      metricResult = 'invalid_timezone';
       logger.warn('Throughput request blocked by invalid scope timezone', {
         scopeId: requestedScopeId,
         timezone: err.timezone,
@@ -117,5 +133,14 @@ export async function GET(
       { code: 'INTERNAL_ERROR', message: 'An internal error occurred.' },
       { status: 500 },
     );
+  } finally {
+    recordThroughputRead({
+      result: metricResult,
+      durationSeconds: metricsClock.durationSecondsSince(metricStartedAt),
+      ...(metricDayCount !== undefined ? { dayCount: metricDayCount } : {}),
+      ...(metricSampleSize !== undefined ? { sampleSize: metricSampleSize } : {}),
+    });
   }
 }
+
+export const GET = withHttpMetrics('GET', '/api/v1/scopes/[scopeId]/throughput', handleGET);

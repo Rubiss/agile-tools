@@ -48,7 +48,6 @@ FROM node:24.15.0-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV AGILE_TOOLS_ROLE=web
 
@@ -93,7 +92,7 @@ RUN sed -i 's/\r$//' /app/docker/run.sh \
 
 USER node
 
-EXPOSE 3000
+EXPOSE 3000 9464
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD ["node", "/app/docker/healthcheck.mjs"]
 

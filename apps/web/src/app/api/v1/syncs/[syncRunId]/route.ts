@@ -4,8 +4,9 @@ import { logger } from '@agile-tools/shared';
 import { requireWorkspaceContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { mapSyncRun } from '../../admin/scopes/_lib';
+import { withHttpMetrics } from '@/server/route-metrics';
 
-export async function GET(
+async function handleGET(
   _req: NextRequest,
   { params }: { params: Promise<{ syncRunId: string }> },
 ): Promise<Response> {
@@ -35,3 +36,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withHttpMetrics('GET', '/api/v1/syncs/[syncRunId]', handleGET);

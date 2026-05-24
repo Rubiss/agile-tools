@@ -5,8 +5,9 @@ import { requireAdminContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { assertTrustedMutationRequest, enforceRateLimit } from '@/server/request-security';
 import { requireJiraConnection, createClientForConnection, normalizeJiraError } from '../../_lib';
+import { withHttpMetrics } from '@/server/route-metrics';
 
-export async function POST(
+async function handlePOST(
   req: NextRequest,
   { params }: { params: Promise<{ connectionId: string }> },
 ): Promise<Response> {
@@ -79,3 +80,5 @@ export async function POST(
     );
   }
 }
+
+export const POST = withHttpMetrics('POST', '/api/v1/admin/jira-connections/[connectionId]/validate', handlePOST);

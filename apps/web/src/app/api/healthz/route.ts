@@ -1,5 +1,6 @@
 import { getPrismaClient } from '@agile-tools/db';
 import { NextResponse } from 'next/server';
+import { withHttpMetrics } from '@/server/route-metrics';
 
 function createResponse(status: 'ok' | 'degraded', httpStatus: number) {
   return NextResponse.json(
@@ -16,7 +17,7 @@ function createResponse(status: 'ok' | 'degraded', httpStatus: number) {
   );
 }
 
-export async function GET() {
+async function handleGET() {
   try {
     await getPrismaClient().$queryRaw`SELECT 1`;
     return createResponse('ok', 200);
@@ -24,3 +25,5 @@ export async function GET() {
     return createResponse('degraded', 503);
   }
 }
+
+export const GET = withHttpMetrics('GET', '/api/healthz', handleGET);
