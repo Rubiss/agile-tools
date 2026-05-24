@@ -41,6 +41,11 @@ paths:
                 type: string
         '500':
           description: Metrics collection failed
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Always `no-store`.
           content:
             text/plain; version=0.0.4; charset=utf-8:
               schema:

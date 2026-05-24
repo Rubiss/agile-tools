@@ -100,7 +100,7 @@ network, restrict `/metrics` at the reverse proxy or network layer because metri
 
 Worker metrics bind to `METRICS_HOST` and `METRICS_PORT`. `METRICS_PORT` takes precedence; if it is unset, the worker
 uses `PORT` so Kubernetes-style environments can assign the scrape port with the standard platform variable, then falls
-back to `9464`. The Docker Compose files set `WORKER_METRICS_PORT` to publish the worker scrape port on the host.
+back to `9464`. The Docker Compose files publish the worker scrape port from `WORKER_METRICS_PORT`, defaulting to `9464`.
 
 Metrics include runtime scrape/process data, standard OpenTelemetry `http.server.request.duration` histograms for web
 requests, standard OpenTelemetry `http.client.request.duration` histograms for outbound Jira REST calls, forecast and flow
