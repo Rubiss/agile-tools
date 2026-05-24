@@ -8,9 +8,13 @@ import {
   ATTR_HTTP_REQUEST_METHOD,
   ATTR_HTTP_RESPONSE_STATUS_CODE,
   ATTR_HTTP_ROUTE,
+  ATTR_SERVER_ADDRESS,
+  ATTR_SERVER_PORT,
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_NAMESPACE,
   ATTR_URL_SCHEME,
+  ERROR_TYPE_VALUE_OTHER,
+  METRIC_HTTP_CLIENT_REQUEST_DURATION,
   HTTP_REQUEST_METHOD_VALUE_OTHER,
   METRIC_HTTP_SERVER_REQUEST_DURATION,
 } from '@opentelemetry/semantic-conventions';
@@ -58,8 +62,7 @@ interface MetricsState {
   syncRunsCounter: Counter;
   syncRunDuration: Histogram;
   syncItemsProcessed: Histogram;
-  jiraRequestsCounter: Counter;
-  jiraRequestDuration: Histogram;
+  httpClientRequestDuration: Histogram;
   databaseQueryDuration: Histogram;
   queueStatsProvider?: () => Promise<QueueStatsSnapshot[]>;
   queueStatsRegistered: boolean;
@@ -70,7 +73,7 @@ const metricsGlobal = globalThis as typeof globalThis & {
   __agileToolsOtelMetrics?: MetricsState;
 };
 
-const HTTP_SERVER_REQUEST_DURATION_BOUNDARIES_SECONDS = [
+const HTTP_REQUEST_DURATION_BOUNDARIES_SECONDS = [
   0.005,
   0.01,
   0.025,
@@ -104,8 +107,15 @@ function durationSecondsSince(startedAtMs: number): number {
   return Math.max(0, (Date.now() - startedAtMs) / 1000);
 }
 
-function statusCodeLabel(statusCode: number | undefined): string {
-  return statusCode === undefined ? 'none' : String(statusCode);
+function defaultPortForScheme(scheme: string): number | undefined {
+  if (scheme === 'http') return 80;
+  if (scheme === 'https') return 443;
+  return undefined;
+}
+
+function serverPort(url: URL): number | undefined {
+  if (url.port) return Number(url.port);
+  return defaultPortForScheme(url.protocol.replace(/:$/, ''));
 }
 
 function normalizeHttpMethod(method: string): string {
@@ -130,7 +140,14 @@ function createMetricsState(options: InitializeMetricsOptions): MetricsState {
         instrumentName: METRIC_HTTP_SERVER_REQUEST_DURATION,
         aggregation: {
           type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
-          options: { boundaries: HTTP_SERVER_REQUEST_DURATION_BOUNDARIES_SECONDS },
+          options: { boundaries: HTTP_REQUEST_DURATION_BOUNDARIES_SECONDS },
+        },
+      },
+      {
+        instrumentName: METRIC_HTTP_CLIENT_REQUEST_DURATION,
+        aggregation: {
+          type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+          options: { boundaries: HTTP_REQUEST_DURATION_BOUNDARIES_SECONDS },
         },
       },
     ],
@@ -228,12 +245,8 @@ function createMetricsState(options: InitializeMetricsOptions): MetricsState {
       description: 'Distinct Jira issues processed by scope sync runs.',
       unit: '1',
     }),
-    jiraRequestsCounter: meter.createCounter('agile_tools_jira_requests', {
-      description: 'Jira HTTP requests by operation and result.',
-      unit: '1',
-    }),
-    jiraRequestDuration: meter.createHistogram('agile_tools_jira_request_duration_seconds', {
-      description: 'Jira HTTP request duration in seconds.',
+    httpClientRequestDuration: meter.createHistogram(METRIC_HTTP_CLIENT_REQUEST_DURATION, {
+      description: 'Duration of HTTP client requests.',
       unit: 's',
     }),
     databaseQueryDuration: meter.createHistogram('agile_tools_db_query_duration_seconds', {
@@ -500,19 +513,33 @@ export function recordSyncRun(input: {
 }
 
 export function recordJiraRequest(input: {
+  method: string;
+  url: URL;
   operation: string;
   result: string;
   statusCode?: number;
   durationSeconds: number;
+  errorType?: string;
 }): void {
   const state = getMetricsState();
-  const attributes = {
-    operation: input.operation,
-    result: input.result,
-    status_code: statusCodeLabel(input.statusCode),
+  const port = serverPort(input.url);
+  const attributes: MetricAttributes = {
+    [ATTR_HTTP_REQUEST_METHOD]: normalizeHttpMethod(input.method),
+    [ATTR_SERVER_ADDRESS]: input.url.hostname,
+    [ATTR_URL_SCHEME]: input.url.protocol.replace(/:$/, ''),
+    'agile_tools.jira.operation': input.operation,
+    'agile_tools.jira.result': input.result,
+    ...(port !== undefined ? { [ATTR_SERVER_PORT]: port } : {}),
+    ...(input.statusCode !== undefined ? { [ATTR_HTTP_RESPONSE_STATUS_CODE]: input.statusCode } : {}),
+    ...(input.errorType !== undefined
+      ? { [ATTR_ERROR_TYPE]: input.errorType }
+      : input.statusCode !== undefined && input.statusCode >= 400
+        ? { [ATTR_ERROR_TYPE]: String(input.statusCode) }
+        : input.statusCode === undefined && input.result !== 'success'
+          ? { [ATTR_ERROR_TYPE]: ERROR_TYPE_VALUE_OTHER }
+          : {}),
   };
-  state.jiraRequestsCounter.add(1, attributes);
-  state.jiraRequestDuration.record(input.durationSeconds, attributes);
+  state.httpClientRequestDuration.record(input.durationSeconds, attributes);
 }
 
 export function recordDatabaseQuery(input: { operation: string; durationSeconds: number }): void {

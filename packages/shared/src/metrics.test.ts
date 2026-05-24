@@ -35,9 +35,18 @@ describe('metrics', () => {
     });
     recordFlowRead({ result: 'success', durationSeconds: 0.05, itemCount: 7 });
     recordJiraRequest({
+      method: 'GET',
+      url: new URL('https://jira.example.internal/rest/agile/1.0/board/123/issue'),
       operation: 'board_issues',
       result: 'success',
       statusCode: 200,
+      durationSeconds: 0.1,
+    });
+    recordJiraRequest({
+      method: 'GET',
+      url: new URL('https://jira.example.internal/rest/agile/1.0/board/123/issue'),
+      operation: 'board_issues',
+      result: 'network_error',
       durationSeconds: 0.1,
     });
 
@@ -54,7 +63,14 @@ describe('metrics', () => {
     expect(body).toContain('agile_tools_forecast_runs_total');
     expect(body).toContain('agile_tools_forecast_duration_seconds');
     expect(body).toContain('agile_tools_flow_items_returned');
-    expect(body).toContain('agile_tools_jira_requests_total');
+    expect(body).toContain('http_client_request_duration');
+    expect(body).toContain('server_address="jira.example.internal"');
+    expect(body).toContain('server_port="443"');
+    expect(body).toContain('agile_tools_jira_operation="board_issues"');
+    expect(body).toContain('agile_tools_jira_result="network_error"');
+    expect(body).toContain('error_type="_OTHER"');
+    expect(body).not.toContain('agile_tools_jira_requests_total');
+    expect(body).not.toContain('agile_tools_jira_request_duration_seconds');
   });
 
   it('serves metrics over HTTP on the requested port', async () => {

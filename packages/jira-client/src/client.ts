@@ -40,6 +40,10 @@ function jiraOperation(path: string): string {
   return 'other';
 }
 
+function metricsErrorType(error: unknown): string | undefined {
+  return error instanceof Error && error.name ? error.name : undefined;
+}
+
 export class JiraClient {
   private readonly limiter = pLimit(CONCURRENCY_LIMIT);
   readonly baseUrl: string;
@@ -74,15 +78,21 @@ export class JiraClient {
               },
             });
           } catch (error) {
+            const errorType = metricsErrorType(error);
             recordJiraRequest({
+              method: 'GET',
+              url,
               operation,
               result: 'network_error',
               durationSeconds: metricsClock.durationSecondsSince(requestStartedAt),
+              ...(errorType === undefined ? {} : { errorType }),
             });
             throw error;
           }
 
           recordJiraRequest({
+            method: 'GET',
+            url,
             operation,
             result: response.ok ? 'success' : response.status === 429 ? 'rate_limited' : 'error',
             statusCode: response.status,
