@@ -2,8 +2,18 @@ import { createServer, type Server } from 'node:http';
 import { metrics, type Counter, type Histogram, type MetricAttributes } from '@opentelemetry/api';
 import { PrometheusExporter, PrometheusSerializer } from '@opentelemetry/exporter-prometheus';
 import { resourceFromAttributes } from '@opentelemetry/resources';
-import { MeterProvider } from '@opentelemetry/sdk-metrics';
-import { ATTR_SERVICE_NAME, ATTR_SERVICE_NAMESPACE } from '@opentelemetry/semantic-conventions';
+import { AggregationType, MeterProvider } from '@opentelemetry/sdk-metrics';
+import {
+  ATTR_ERROR_TYPE,
+  ATTR_HTTP_REQUEST_METHOD,
+  ATTR_HTTP_RESPONSE_STATUS_CODE,
+  ATTR_HTTP_ROUTE,
+  ATTR_SERVICE_NAME,
+  ATTR_SERVICE_NAMESPACE,
+  ATTR_URL_SCHEME,
+  HTTP_REQUEST_METHOD_VALUE_OTHER,
+  METRIC_HTTP_SERVER_REQUEST_DURATION,
+} from '@opentelemetry/semantic-conventions';
 
 import { logger } from './logging.js';
 
@@ -30,7 +40,6 @@ interface MetricsState {
   meterProvider: MeterProvider;
   scrapeCounter: Counter;
   collectionErrorCounter: Counter;
-  httpRequestsCounter: Counter;
   httpRequestDuration: Histogram;
   forecastRunsCounter: Counter;
   forecastDuration: Histogram;
@@ -61,19 +70,47 @@ const metricsGlobal = globalThis as typeof globalThis & {
   __agileToolsOtelMetrics?: MetricsState;
 };
 
+const HTTP_SERVER_REQUEST_DURATION_BOUNDARIES_SECONDS = [
+  0.005,
+  0.01,
+  0.025,
+  0.05,
+  0.075,
+  0.1,
+  0.25,
+  0.5,
+  0.75,
+  1,
+  2.5,
+  5,
+  7.5,
+  10,
+];
+
+const STANDARD_HTTP_METHODS = new Set([
+  'CONNECT',
+  'DELETE',
+  'GET',
+  'HEAD',
+  'OPTIONS',
+  'PATCH',
+  'POST',
+  'PUT',
+  'QUERY',
+  'TRACE',
+]);
+
 function durationSecondsSince(startedAtMs: number): number {
   return Math.max(0, (Date.now() - startedAtMs) / 1000);
 }
 
-function httpOutcome(statusCode: number): string {
-  if (statusCode >= 500) return 'server_error';
-  if (statusCode >= 400) return 'client_error';
-  if (statusCode >= 300) return 'redirect';
-  return 'success';
-}
-
 function statusCodeLabel(statusCode: number | undefined): string {
   return statusCode === undefined ? 'none' : String(statusCode);
+}
+
+function normalizeHttpMethod(method: string): string {
+  const normalized = method.toUpperCase();
+  return STANDARD_HTTP_METHODS.has(normalized) ? normalized : HTTP_REQUEST_METHOD_VALUE_OTHER;
 }
 
 function createMetricsState(options: InitializeMetricsOptions): MetricsState {
@@ -88,6 +125,15 @@ function createMetricsState(options: InitializeMetricsOptions): MetricsState {
       [ATTR_SERVICE_NAMESPACE]: 'agile-tools',
       'service.runtime': options.runtime,
     }),
+    views: [
+      {
+        instrumentName: METRIC_HTTP_SERVER_REQUEST_DURATION,
+        aggregation: {
+          type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+          options: { boundaries: HTTP_SERVER_REQUEST_DURATION_BOUNDARIES_SECONDS },
+        },
+      },
+    ],
     readers: [exporter],
   });
   metrics.setGlobalMeterProvider(meterProvider);
@@ -110,12 +156,8 @@ function createMetricsState(options: InitializeMetricsOptions): MetricsState {
     meterProvider,
     scrapeCounter,
     collectionErrorCounter,
-    httpRequestsCounter: meter.createCounter('agile_tools_http_requests', {
-      description: 'HTTP requests handled by the web runtime.',
-      unit: '1',
-    }),
-    httpRequestDuration: meter.createHistogram('agile_tools_http_request_duration_seconds', {
-      description: 'HTTP request handler duration in seconds.',
+    httpRequestDuration: meter.createHistogram(METRIC_HTTP_SERVER_REQUEST_DURATION, {
+      description: 'Duration of HTTP server requests.',
       unit: 's',
     }),
     forecastRunsCounter: meter.createCounter('agile_tools_forecast_runs', {
@@ -366,17 +408,23 @@ export function observeQueueStats(provider: () => Promise<QueueStatsSnapshot[]>)
 export function recordHttpRequest(input: {
   method: string;
   route: string;
+  scheme: string;
   statusCode: number;
   durationSeconds: number;
+  errorType?: string;
 }): void {
   const state = getMetricsState();
   const attributes: MetricAttributes = {
-    method: input.method,
-    route: input.route,
-    status_code: String(input.statusCode),
-    outcome: httpOutcome(input.statusCode),
+    [ATTR_HTTP_REQUEST_METHOD]: normalizeHttpMethod(input.method),
+    [ATTR_HTTP_ROUTE]: input.route,
+    [ATTR_HTTP_RESPONSE_STATUS_CODE]: input.statusCode,
+    [ATTR_URL_SCHEME]: input.scheme,
+    ...(input.errorType !== undefined
+      ? { [ATTR_ERROR_TYPE]: input.errorType }
+      : input.statusCode >= 500
+        ? { [ATTR_ERROR_TYPE]: String(input.statusCode) }
+        : {}),
   };
-  state.httpRequestsCounter.add(1, attributes);
   state.httpRequestDuration.record(input.durationSeconds, attributes);
 }
 
