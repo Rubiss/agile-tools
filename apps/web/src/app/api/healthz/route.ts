@@ -1,5 +1,5 @@
 import { getPrismaClient } from '@agile-tools/db';
-import { NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { withHttpMetrics } from '@/server/route-metrics';
 
 function createResponse(status: 'ok' | 'degraded', httpStatus: number) {
@@ -17,7 +17,8 @@ function createResponse(status: 'ok' | 'degraded', httpStatus: number) {
   );
 }
 
-async function handleGET() {
+async function handleGET(request: NextRequest) {
+  void request;
   try {
     await getPrismaClient().$queryRaw`SELECT 1`;
     return createResponse('ok', 200);
