@@ -16,11 +16,19 @@ export function getPrismaClient(): PrismaClient {
     // satisfy unrelated config like ENCRYPTION_KEY.
     resolveDatabaseUrlFromEnv();
     const client = new PrismaClient({
-      log: [
-        { emit: 'event', level: 'query' },
-        { emit: 'stdout', level: 'warn' },
-        { emit: 'stdout', level: 'error' },
-      ],
+      log:
+        process.env['NODE_ENV'] === 'development'
+          ? [
+              { emit: 'event', level: 'query' },
+              { emit: 'stdout', level: 'query' },
+              { emit: 'stdout', level: 'warn' },
+              { emit: 'stdout', level: 'error' },
+            ]
+          : [
+              { emit: 'event', level: 'query' },
+              { emit: 'stdout', level: 'warn' },
+              { emit: 'stdout', level: 'error' },
+            ],
     });
     client.$on('query', (event: Prisma.QueryEvent) => {
       recordDatabaseQuery({
