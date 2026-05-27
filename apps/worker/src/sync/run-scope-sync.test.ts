@@ -485,6 +485,56 @@ describe('runScopeSync', () => {
     expect(db.workItem.upsert).toHaveBeenCalledTimes(1);
   });
 
+  it('passes only statuses from the start column onward as in-scope', async () => {
+    const db = createDb();
+    const backlogIssue = makeIssue({
+      id: 'ISSUE-1',
+      key: 'PROJ-1',
+      projectId: 'proj-board',
+      statusId: '5',
+      statusName: 'Backlog',
+    });
+
+    getBoardDetailWithFilterIdMock.mockResolvedValue({
+      detail: {
+        boardId: 42,
+        boardName: 'Payments Board',
+        columns: [
+          { name: 'Backlog', statusIds: ['5'] },
+          { name: 'Doing', statusIds: ['10'] },
+          { name: 'Review', statusIds: ['20'] },
+        ],
+        statuses: [
+          { id: '5', name: 'Backlog' },
+          { id: '10', name: 'In Progress' },
+          { id: '20', name: 'Review' },
+        ],
+        completionStatuses: [
+          { id: '30', name: 'Closed' },
+          { id: '40', name: 'Resolved' },
+        ],
+        issueTypes: [{ id: 'story', name: 'Story' }],
+      },
+      filterId: null,
+    });
+    streamBoardIssuesMock.mockReturnValue(issueStream(backlogIssue));
+
+    await runScopeSync(db as unknown as Parameters<typeof runScopeSync>[0], 'run-1');
+
+    expect(normalizeJiraIssueMock).toHaveBeenCalledWith(
+      backlogIssue,
+      [],
+      expect.objectContaining({
+        inScopeStatusIds: new Set(['10', '20', '30', '40']),
+        statusIdsByColumn: {
+          '5': 'Backlog',
+          '10': 'Doing',
+          '20': 'Review',
+        },
+      }),
+    );
+  });
+
   it('does not publish work items until the Jira issue stream is complete', async () => {
     const db = createDb({ doneStatusIds: [] });
     const paused = createDeferred();

@@ -5,6 +5,7 @@ export interface NormalizeContext {
   syncRunId: string;
   startStatusIds: Set<string>;
   doneStatusIds: Set<string>;
+  inScopeStatusIds: Set<string>;
   includedIssueTypeIds: Set<string>;
   /** Inverted lookup: statusId → column name from the board configuration. */
   statusIdsByColumn: Record<string, string>;
@@ -190,12 +191,13 @@ function deriveTimestamps(
       e.toStatusId != null &&
       ctx.startStatusIds.has(e.toStatusId),
   );
-  const startedAt =
-    startEvents.length > 0
+  const startedAt = ctx.inScopeStatusIds.has(currentStatusId)
+    ? startEvents.length > 0
       ? startEvents[0]!.changedAt
       : ctx.startStatusIds.has(currentStatusId)
         ? createdAt
-        : null;
+        : null
+    : null;
 
   let completedAt: Date | null = null;
   if (ctx.doneStatusIds.has(currentStatusId)) {
