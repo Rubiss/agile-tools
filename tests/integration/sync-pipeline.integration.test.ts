@@ -27,6 +27,7 @@ const BASE_CONTEXT: NormalizeContext = {
   syncRunId: 'run-1',
   startStatusIds: new Set(['10']),
   doneStatusIds: new Set(['30']),
+  inScopeStatusIds: new Set(['10', '20', '30']),
   includedIssueTypeIds: new Set(['story']),
   statusIdsByColumn: {
     '10': 'In Progress',

@@ -228,9 +228,18 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
 
     // Build inverted status → column lookup from board configuration.
     const statusIdsByColumn: Record<string, string> = {};
+    const inScopeStatusIds = new Set<string>(scope.doneStatusIds);
+    const startStatusIds = new Set<string>(scope.startStatusIds);
+    let reachedStartColumn = false;
     for (const col of boardDetail.columns) {
+      if (!reachedStartColumn && col.statusIds.some((statusId) => startStatusIds.has(statusId))) {
+        reachedStartColumn = true;
+      }
       for (const statusId of col.statusIds) {
         statusIdsByColumn[statusId] = col.name;
+        if (reachedStartColumn) {
+          inScopeStatusIds.add(statusId);
+        }
       }
     }
 
@@ -250,8 +259,9 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
     const ctx: NormalizeContext = {
       scopeId: scope.id,
       syncRunId,
-      startStatusIds: new Set(scope.startStatusIds),
+      startStatusIds,
       doneStatusIds: new Set(scope.doneStatusIds),
+      inScopeStatusIds,
       includedIssueTypeIds: new Set(scope.includedIssueTypeIds),
       statusIdsByColumn,
       jiraBaseUrl: connection.baseUrl,
