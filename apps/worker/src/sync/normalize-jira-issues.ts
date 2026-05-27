@@ -191,8 +191,9 @@ function deriveTimestamps(
       e.toStatusId != null &&
       ctx.startStatusIds.has(e.toStatusId),
   );
+  const currentStatusInScope = ctx.inScopeStatusIds.has(currentStatusId);
   let startedAt: Date | null = null;
-  if (ctx.inScopeStatusIds.has(currentStatusId)) {
+  if (currentStatusInScope) {
     if (startEvents.length > 0) {
       startedAt = startEvents[0]!.changedAt;
     } else if (ctx.startStatusIds.has(currentStatusId)) {
