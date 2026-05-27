@@ -191,13 +191,14 @@ function deriveTimestamps(
       e.toStatusId != null &&
       ctx.startStatusIds.has(e.toStatusId),
   );
-  const startedAt = ctx.inScopeStatusIds.has(currentStatusId)
-    ? startEvents.length > 0
-      ? startEvents[0]!.changedAt
-      : ctx.startStatusIds.has(currentStatusId)
-        ? createdAt
-        : null
-    : null;
+  let startedAt: Date | null = null;
+  if (ctx.inScopeStatusIds.has(currentStatusId)) {
+    if (startEvents.length > 0) {
+      startedAt = startEvents[0]!.changedAt;
+    } else if (ctx.startStatusIds.has(currentStatusId)) {
+      startedAt = createdAt;
+    }
+  }
 
   let completedAt: Date | null = null;
   if (ctx.doneStatusIds.has(currentStatusId)) {
