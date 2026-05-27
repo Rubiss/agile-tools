@@ -485,14 +485,14 @@ describe('runScopeSync', () => {
     expect(db.workItem.upsert).toHaveBeenCalledTimes(1);
   });
 
-  it('passes only statuses from the start column onward as in-scope', async () => {
+  it('passes only statuses from the configured start status onward as in-scope', async () => {
     const db = createDb();
-    const backlogIssue = makeIssue({
+    const preStartIssue = makeIssue({
       id: 'ISSUE-1',
       key: 'PROJ-1',
       projectId: 'proj-board',
       statusId: '5',
-      statusName: 'Backlog',
+      statusName: 'Selected',
     });
 
     getBoardDetailWithFilterIdMock.mockResolvedValue({
@@ -501,12 +501,12 @@ describe('runScopeSync', () => {
         boardName: 'Payments Board',
         columns: [
           { name: 'Backlog', statusIds: ['4'] },
-          { name: 'Doing', statusIds: ['5', '10'] },
+          { name: 'Selected / Doing', statusIds: ['5', '10'] },
           { name: 'Review', statusIds: ['20'] },
         ],
         statuses: [
           { id: '4', name: 'To Do' },
-          { id: '5', name: 'Backlog' },
+          { id: '5', name: 'Selected' },
           { id: '10', name: 'In Progress' },
           { id: '20', name: 'Review' },
         ],
@@ -518,19 +518,19 @@ describe('runScopeSync', () => {
       },
       filterId: null,
     });
-    streamBoardIssuesMock.mockReturnValue(issueStream(backlogIssue));
+    streamBoardIssuesMock.mockReturnValue(issueStream(preStartIssue));
 
     await runScopeSync(db as unknown as Parameters<typeof runScopeSync>[0], 'run-1');
 
     expect(normalizeJiraIssueMock).toHaveBeenCalledWith(
-      backlogIssue,
+      preStartIssue,
       [],
       expect.objectContaining({
         inScopeStatusIds: new Set(['10', '20', '30', '40']),
         statusIdsByColumn: {
           '4': 'Backlog',
-          '5': 'Doing',
-          '10': 'Doing',
+          '5': 'Selected / Doing',
+          '10': 'Selected / Doing',
           '20': 'Review',
         },
       }),
