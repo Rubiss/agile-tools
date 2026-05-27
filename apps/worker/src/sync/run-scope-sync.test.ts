@@ -500,11 +500,12 @@ describe('runScopeSync', () => {
         boardId: 42,
         boardName: 'Payments Board',
         columns: [
-          { name: 'Backlog', statusIds: ['5'] },
-          { name: 'Doing', statusIds: ['10'] },
+          { name: 'Backlog', statusIds: ['4'] },
+          { name: 'Doing', statusIds: ['5', '10'] },
           { name: 'Review', statusIds: ['20'] },
         ],
         statuses: [
+          { id: '4', name: 'To Do' },
           { id: '5', name: 'Backlog' },
           { id: '10', name: 'In Progress' },
           { id: '20', name: 'Review' },
@@ -527,7 +528,8 @@ describe('runScopeSync', () => {
       expect.objectContaining({
         inScopeStatusIds: new Set(['10', '20', '30', '40']),
         statusIdsByColumn: {
-          '5': 'Backlog',
+          '4': 'Backlog',
+          '5': 'Doing',
           '10': 'Doing',
           '20': 'Review',
         },

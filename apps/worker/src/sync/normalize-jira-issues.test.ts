@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeJiraIssue, type NormalizeContext } from './normalize-jira-issues.js';
-import type { ChangelogHistory, ChangelogItem, RawJiraIssue } from '@agile-tools/jira-client';
+import type { ChangelogHistory, RawJiraIssue } from '@agile-tools/jira-client';
 
 const BASE_CONTEXT: NormalizeContext = {
   scopeId: 'scope-1',
@@ -40,8 +40,8 @@ function makeHistory(
   return { id, created, items };
 }
 
-function statusChange(from: string, to: string): ChangelogItem {
-  return { field: 'status', from, to, toString: null };
+function statusChange(from: string, to: string): ChangelogHistory['items'][number] {
+  return { field: 'status', from, to } as ChangelogHistory['items'][number];
 }
 
 describe('normalizeJiraIssue', () => {

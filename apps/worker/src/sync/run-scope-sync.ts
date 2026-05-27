@@ -232,11 +232,11 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
     const startStatusIds = new Set<string>(scope.startStatusIds);
     let reachedStartColumn = false;
     for (const col of boardDetail.columns) {
-      if (!reachedStartColumn && col.statusIds.some((statusId) => startStatusIds.has(statusId))) {
-        reachedStartColumn = true;
-      }
       for (const statusId of col.statusIds) {
         statusIdsByColumn[statusId] = col.name;
+        if (!reachedStartColumn && startStatusIds.has(statusId)) {
+          reachedStartColumn = true;
+        }
         if (reachedStartColumn) {
           inScopeStatusIds.add(statusId);
         }
