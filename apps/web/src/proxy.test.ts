@@ -78,8 +78,18 @@ describe('proxy', () => {
         },
       }),
     );
+    const trailingSlashResponse = proxy(
+      new NextRequest('http://internal.example.com/metrics/', {
+        headers: {
+          'x-forwarded-proto': 'http',
+          'x-forwarded-host': 'agile.example.com',
+        },
+      }),
+    );
 
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
+    expect(trailingSlashResponse.status).toBe(200);
+    expect(trailingSlashResponse.headers.get('location')).toBeNull();
   });
 });
