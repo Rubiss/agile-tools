@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24.15.0-bookworm-slim AS base
+FROM node:24.16.0-bookworm-slim AS base
 
 ARG NPM_CONFIG_REGISTRY
 ARG COREPACK_NPM_REGISTRY=$NPM_CONFIG_REGISTRY
@@ -44,7 +44,7 @@ ENV NODE_ENV=production
 
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --prod --frozen-lockfile
 
-FROM node:24.15.0-bookworm-slim AS runtime
+FROM node:24.16.0-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
