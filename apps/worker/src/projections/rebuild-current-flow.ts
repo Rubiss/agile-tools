@@ -38,6 +38,7 @@ export async function rebuildCurrentFlowProjection(
       scopeId,
       completedAt: { not: null, gte: windowStart },
       excludedReason: null,
+      lastSyncRunId: syncRunId,
     },
     select: {
       startedAt: true,
