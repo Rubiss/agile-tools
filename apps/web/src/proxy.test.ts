@@ -66,4 +66,20 @@ describe('proxy', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
   });
+
+  it('passes /metrics through in production', () => {
+    process.env = { ...process.env, NODE_ENV: 'production' };
+
+    const response = proxy(
+      new NextRequest('http://internal.example.com/metrics', {
+        headers: {
+          'x-forwarded-proto': 'http',
+          'x-forwarded-host': 'agile.example.com',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+  });
 });

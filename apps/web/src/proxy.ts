@@ -14,6 +14,10 @@ export function proxy(request: NextRequest): Response {
     return NextResponse.next();
   }
 
+  if (request.nextUrl.pathname === '/metrics' || request.nextUrl.pathname === '/metrics/') {
+    return NextResponse.next();
+  }
+
   if (isLoopbackBypassEnabled() && isLoopbackHost(request.nextUrl.hostname)) {
     return NextResponse.next();
   }
