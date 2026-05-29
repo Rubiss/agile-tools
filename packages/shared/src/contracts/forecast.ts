@@ -1,11 +1,16 @@
 import { z } from 'zod';
-import { isValidLocalDate } from '../working-days.js';
 import { WarningSchema } from './api.js';
+import {
+  LocalDateSchema,
+  ResolvedSampleWindowFields,
+  SampleWindowRequestFields,
+  validateSampleWindowRequestShape,
+} from '../sample-window.js';
 
 // ─── Request ──────────────────────────────────────────────────────────────────
 
 const baseFields = {
-  historicalWindowDays: z.number().int().min(30).max(730),
+  ...SampleWindowRequestFields,
   confidenceLevels: z.array(z.number().int().min(1).max(99)).min(1),
   /** Monte Carlo trial count; defaults to 10 000 when omitted. */
   iterations: z.number().int().min(1000).max(50000).optional(),
@@ -20,13 +25,6 @@ export const WhenForecastRequestSchema = z.object({
 });
 export type WhenForecastRequest = z.infer<typeof WhenForecastRequestSchema>;
 
-const LocalDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((value) => isValidLocalDate(value), {
-    message: 'Must be a real calendar date in YYYY-MM-DD format.',
-  });
-
 export const HowManyForecastRequestSchema = z.object({
   type: z.literal('how_many'),
   targetDate: LocalDateSchema,
@@ -37,7 +35,7 @@ export type HowManyForecastRequest = z.infer<typeof HowManyForecastRequestSchema
 export const ForecastRequestSchema = z.discriminatedUnion('type', [
   WhenForecastRequestSchema,
   HowManyForecastRequestSchema,
-]);
+]).superRefine(validateSampleWindowRequestShape);
 export type ForecastRequest = z.infer<typeof ForecastRequestSchema>;
 
 // ─── Result ───────────────────────────────────────────────────────────────────
@@ -57,7 +55,7 @@ export const ForecastResponseSchema = z.object({
   scopeId: z.string().uuid(),
   dataVersion: z.string(),
   type: z.enum(['when', 'how_many']),
-  historicalWindowDays: z.number().int(),
+  ...ResolvedSampleWindowFields,
   sampleSize: z.number().int(),
   iterations: z.number().int(),
   warnings: z.array(WarningSchema),

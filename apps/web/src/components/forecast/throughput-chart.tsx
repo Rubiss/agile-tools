@@ -2,6 +2,7 @@
 
 import { ResponsiveLine } from '@nivo/line';
 import type { ThroughputResponse } from '@agile-tools/shared/contracts/api';
+import { formatSampleWindowLabel } from '@agile-tools/shared';
 import { noticeStyle, palette } from '@/components/app/chrome';
 
 interface ThroughputChartProps {
@@ -10,7 +11,7 @@ interface ThroughputChartProps {
 }
 
 export function ThroughputChart({ response, height = 200 }: ThroughputChartProps) {
-  const { days, sampleSize, historicalWindowDays, warnings } = response;
+  const { days, sampleSize, warnings } = response;
   const chartColor = palette.accentStrong;
   const axisColor = palette.soft;
   const gridColor = palette.line;
@@ -147,7 +148,7 @@ export function ThroughputChart({ response, height = 200 }: ThroughputChartProps
       </div>
 
       <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: palette.soft }}>
-        Forecast sample: {sampleSize} completed stories from the last {historicalWindowDays} days
+        Forecast sample: {sampleSize} completed stories from {formatSampleWindowLabel(response)}
         {' '}(current partial day excluded)
       </p>
     </div>

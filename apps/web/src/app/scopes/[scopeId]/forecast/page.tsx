@@ -4,6 +4,14 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import type { ThroughputResponse } from '@agile-tools/shared/contracts/api';
 import type { ForecastResponse, ForecastRequest } from '@agile-tools/shared/contracts/forecast';
+import {
+  appendSampleWindowSearchParams,
+  DEFAULT_SAMPLE_WINDOW_DAYS,
+  formatSampleWindowLabel,
+  SampleWindowRequestSchema,
+  sampleWindowRequestFields,
+  type NormalizedSampleWindow,
+} from '@agile-tools/shared';
 import { ThroughputChart } from '@/components/forecast/throughput-chart';
 import { ForecastForm } from '@/components/forecast/forecast-form';
 import { ForecastResults } from '@/components/forecast/forecast-results';
@@ -36,9 +44,38 @@ function getProblemMessage(problem: ProblemResponse | null, fallbackMessage: str
   return problem?.details?.[0] ?? problem?.message ?? fallbackMessage;
 }
 
+function defaultSampleWindow(): NormalizedSampleWindow {
+  return { sampleMode: 'rolling', historicalWindowDays: DEFAULT_SAMPLE_WINDOW_DAYS };
+}
+
+function parseSampleWindowFromLocation(): NormalizedSampleWindow {
+  if (typeof window === 'undefined') {
+    return defaultSampleWindow();
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const historicalWindowParam = params.get('historicalWindowDays');
+  const parsed = SampleWindowRequestSchema.safeParse({
+    sampleMode: params.get('sampleMode') ?? undefined,
+    historicalWindowDays:
+      historicalWindowParam === null ? undefined : Number(historicalWindowParam),
+    sampleStartDate: params.get('sampleStartDate') ?? undefined,
+    sampleEndDate: params.get('sampleEndDate') ?? undefined,
+  });
+
+  if (!parsed.success) {
+    return defaultSampleWindow();
+  }
+  return sampleWindowRequestFields(parsed.data);
+}
+
 export default function ForecastPage() {
   const { scopeId } = useParams<{ scopeId: string }>();
 
+  const [sampleWindow, setSampleWindow] = useState<NormalizedSampleWindow>(
+    parseSampleWindowFromLocation,
+  );
+  const [pinnedDataVersion, setPinnedDataVersion] = useState<string | null>(null);
   const [throughput, setThroughput] = useState<ThroughputResponse | null>(null);
   const [throughputLoading, setThroughputLoading] = useState(true);
   const [throughputError, setThroughputError] = useState<string | null>(null);
@@ -50,9 +87,15 @@ export default function ForecastPage() {
 
   useEffect(() => {
     if (!scopeId) return;
+    const params = new URLSearchParams();
+    appendSampleWindowSearchParams(params, sampleWindow);
+    if (pinnedDataVersion) {
+      params.set('dataVersion', pinnedDataVersion);
+    }
+
     setThroughputLoading(true);
     setThroughputError(null);
-    fetch(`/api/v1/scopes/${scopeId}/throughput`)
+    fetch(`/api/v1/scopes/${scopeId}/throughput?${params.toString()}`)
       .then(async (res) => {
         const body = (await res.json().catch(() => null)) as ProblemResponse | ThroughputResponse | null;
         if (res.status === 401) throw new Error('Authentication required. Please sign in.');
@@ -68,13 +111,25 @@ export default function ForecastPage() {
       })
       .then((data) => {
         setThroughput(data);
+        if (!pinnedDataVersion && data.dataVersion) {
+          setPinnedDataVersion(data.dataVersion);
+        }
         setThroughputLoading(false);
       })
       .catch((err: unknown) => {
         setThroughputError(err instanceof Error ? err.message : 'Failed to load throughput.');
         setThroughputLoading(false);
       });
-  }, [scopeId]);
+  }, [pinnedDataVersion, sampleWindow, scopeId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    appendSampleWindowSearchParams(params, sampleWindow);
+    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+    setForecastResponse(null);
+    setLastForecastRequest(null);
+  }, [sampleWindow]);
 
   async function handleForecast(request: ForecastRequest) {
     setForecastLoading(true);
@@ -83,9 +138,10 @@ export default function ForecastPage() {
     setLastForecastRequest(null);
 
     try {
+      const dataVersion = pinnedDataVersion ?? throughput?.dataVersion;
       const body = {
         ...request,
-        ...(throughput?.dataVersion ? { dataVersion: throughput.dataVersion } : {}),
+        ...(dataVersion ? { dataVersion } : {}),
       };
 
       const res = await fetch(`/api/v1/scopes/${scopeId}/forecasts`, {
@@ -137,7 +193,9 @@ export default function ForecastPage() {
           </article>
           <article style={statCardStyle}>
             <p style={statLabelStyle}>Window</p>
-            <p style={statValueStyle}>{throughput?.historicalWindowDays ?? 90}d</p>
+            <p style={{ ...statValueStyle, fontSize: '0.92rem' }}>
+              {throughput ? formatSampleWindowLabel(throughput) : formatSampleWindowLabel(sampleWindow)}
+            </p>
           </article>
           <article style={statCardStyle}>
             <p style={statLabelStyle}>Snapshot</p>
@@ -182,6 +240,8 @@ export default function ForecastPage() {
           onSubmit={(req) => { void handleForecast(req); }}
           disabled={forecastLoading || throughputLoading}
           historicalWindowOptions={[30, 60, 90, 180, 365]}
+          sampleWindow={sampleWindow}
+          onSampleWindowChange={setSampleWindow}
         />
         {forecastLoading && (
           <p style={{ marginTop: '0.85rem', color: palette.soft, fontSize: '0.875rem' }}>

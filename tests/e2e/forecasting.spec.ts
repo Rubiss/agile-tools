@@ -49,7 +49,10 @@ const MOCK_THROUGHPUT: ThroughputResponse = {
   scopeId: '', // filled in after scopeId is known
   dataVersion: 'forecast-e2e-version',
   syncedAt: new Date('2025-01-15T12:00:00Z').toISOString(),
+  sampleMode: 'rolling',
   historicalWindowDays: 90,
+  sampleStartDate: '2024-10-17',
+  sampleEndDate: '2025-01-15',
   sampleSize: 15,
   warnings: [],
   days: [
@@ -72,7 +75,10 @@ const MOCK_WHEN_RESPONSE: ForecastResponse = {
   scopeId: '', // filled in after scopeId is known
   dataVersion: 'forecast-e2e-version',
   type: 'when',
+  sampleMode: 'rolling',
   historicalWindowDays: 90,
+  sampleStartDate: '2024-10-17',
+  sampleEndDate: '2025-01-15',
   sampleSize: 15,
   iterations: 10000,
   warnings: [
@@ -95,7 +101,10 @@ const MOCK_HOW_MANY_RESPONSE: ForecastResponse = {
   scopeId: '', // filled in after scopeId is known
   dataVersion: 'forecast-e2e-version',
   type: 'how_many',
+  sampleMode: 'rolling',
   historicalWindowDays: 90,
+  sampleStartDate: '2024-10-17',
+  sampleEndDate: '2025-01-15',
   sampleSize: 15,
   iterations: 10000,
   warnings: [
@@ -329,9 +338,10 @@ test('when forecast returns completion dates table with LOW_SAMPLE_SIZE warning'
   // LOW_SAMPLE_SIZE warning is displayed.
   await expect(page.getByText(/Only 15 completed stories/)).toBeVisible();
 
-  // Verify the POST body included type, historicalWindowDays, confidenceLevels, and dataVersion.
+  // Verify the POST body included type, sample window, confidenceLevels, and dataVersion.
   expect(capturedPostBody).not.toBeNull();
   expect(capturedPostBody!['type']).toBe('when');
+  expect(capturedPostBody!['sampleMode']).toBe('rolling');
   expect(capturedPostBody!['historicalWindowDays']).toBeDefined();
   expect(capturedPostBody!['confidenceLevels']).toBeDefined();
   expect(capturedPostBody!['dataVersion']).toBe('forecast-e2e-version');
@@ -408,7 +418,10 @@ test('POST /forecasts returns a valid ForecastResponse for admin user', async ({
   const body = (await res.json()) as ForecastResponse;
   expect(body.scopeId).toBe(scopeId);
   expect(body.type).toBe('when');
+  expect(body.sampleMode).toBe('rolling');
   expect(body.historicalWindowDays).toBe(90);
+  expect(body.sampleStartDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(body.sampleEndDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   expect(typeof body.sampleSize).toBe('number');
   expect(typeof body.iterations).toBe('number');
   expect(Array.isArray(body.results)).toBe(true);

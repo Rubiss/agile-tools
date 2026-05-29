@@ -30,6 +30,13 @@ import { startPostgres, stopPostgres } from './support/postgres';
 
 // ─── Section 1: Pure unit tests ───────────────────────────────────────────────
 
+const ROLLING_SAMPLE_WINDOW = {
+  sampleMode: 'rolling' as const,
+  historicalWindowDays: 90,
+  sampleStartDate: '2025-01-01',
+  sampleEndDate: '2025-03-31',
+};
+
 describe('runWhenForecast — pure unit', () => {
   it('returns the same completion date for all confidence levels when throughput is deterministic', () => {
     // With throughput always exactly 1 story/day, every trial takes exactly 5 days.
@@ -173,7 +180,7 @@ describe('computeForecastRequestHash — pure unit', () => {
   it('produces the same hash for identical inputs', () => {
     const input = {
       type: 'when' as const,
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 10000,
       confidenceLevels: [50, 85],
       remainingStoryCount: 10,
@@ -184,7 +191,7 @@ describe('computeForecastRequestHash — pure unit', () => {
   it('produces the same hash regardless of confidence level order', () => {
     const base = {
       type: 'how_many' as const,
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 10000,
       targetDate: '2025-06-01',
     };
@@ -196,7 +203,7 @@ describe('computeForecastRequestHash — pure unit', () => {
   it('produces different hashes for different remainingStoryCount values', () => {
     const base = {
       type: 'when' as const,
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 10000,
       confidenceLevels: [85],
     };
@@ -208,14 +215,14 @@ describe('computeForecastRequestHash — pure unit', () => {
   it('produces different hashes for when vs how_many', () => {
     const h1 = computeForecastRequestHash({
       type: 'when',
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 10000,
       confidenceLevels: [85],
       remainingStoryCount: 10,
     });
     const h2 = computeForecastRequestHash({
       type: 'how_many',
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 10000,
       confidenceLevels: [85],
       targetDate: '2025-06-01',
@@ -707,7 +714,7 @@ describe('forecast cache round-trip — DB integration', () => {
     const db = getPrismaClient();
     const hash = computeForecastRequestHash({
       type: 'when',
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 1000,
       confidenceLevels: [50],
       remainingStoryCount: 99,
@@ -720,7 +727,7 @@ describe('forecast cache round-trip — DB integration', () => {
     const db = getPrismaClient();
     const hash = computeForecastRequestHash({
       type: 'when',
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 1000,
       confidenceLevels: [50, 85],
       remainingStoryCount: 10,
@@ -737,7 +744,7 @@ describe('forecast cache round-trip — DB integration', () => {
     await storeForecastCache(db, {
       scopeId,
       requestHash: hash,
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 1000,
       confidenceLevels: [50, 85],
       sampleSize: 75,
@@ -758,7 +765,7 @@ describe('forecast cache round-trip — DB integration', () => {
     const db = getPrismaClient();
     const hash = computeForecastRequestHash({
       type: 'when',
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 1000,
       confidenceLevels: [50],
       remainingStoryCount: 5,
@@ -777,7 +784,7 @@ describe('forecast cache round-trip — DB integration', () => {
     await storeForecastCache(db, {
       scopeId,
       requestHash: hash,
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 1000,
       confidenceLevels: [50],
       sampleSize: 30,
@@ -787,7 +794,7 @@ describe('forecast cache round-trip — DB integration', () => {
     await storeForecastCache(db, {
       scopeId,
       requestHash: hash,
-      historicalWindowDays: 90,
+      sampleWindow: ROLLING_SAMPLE_WINDOW,
       iterations: 1000,
       confidenceLevels: [50],
       sampleSize: 30,

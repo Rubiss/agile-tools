@@ -292,7 +292,10 @@ model ForecastResultCache {
   id                   String    @id @default(uuid())
   scopeId              String
   requestHash          String
-  historicalWindowDays Int
+  sampleMode           String    @default("rolling")
+  historicalWindowDays Int?
+  sampleStartDate      String?
+  sampleEndDate        String?
   iterations           Int
   confidenceLevels     Float[]
   sampleSize           Int

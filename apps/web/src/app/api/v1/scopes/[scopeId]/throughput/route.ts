@@ -1,5 +1,13 @@
 import { type NextRequest } from 'next/server';
-import { InvalidTimeZoneError, logger, metricsClock, recordThroughputRead } from '@agile-tools/shared';
+import {
+  InvalidTimeZoneError,
+  logger,
+  metricsClock,
+  recordThroughputRead,
+  resolveSampleWindow,
+  SampleWindowRequestSchema,
+  SampleWindowValidationError,
+} from '@agile-tools/shared';
 import {
   getPrismaClient,
   getFlowScope,
@@ -14,7 +22,27 @@ import { getForecastSampleSize } from '@/server/views/throughput-sample';
 import { buildInvalidScopeTimezoneProblem } from '../../_problems';
 import { withHttpMetrics } from '@/server/route-metrics';
 
-const DEFAULT_HISTORICAL_WINDOW = 90;
+function parseSampleWindowParams(url: URL): unknown {
+  const historicalWindowParam = url.searchParams.get('historicalWindowDays');
+  return {
+    sampleMode: url.searchParams.get('sampleMode') ?? undefined,
+    historicalWindowDays:
+      historicalWindowParam === null ? undefined : Number(historicalWindowParam),
+    sampleStartDate: url.searchParams.get('sampleStartDate') ?? undefined,
+    sampleEndDate: url.searchParams.get('sampleEndDate') ?? undefined,
+  };
+}
+
+function invalidSampleWindowResponse(details: string[]): Response {
+  return Response.json(
+    {
+      code: 'INVALID_REQUEST',
+      message: 'Invalid throughput sample window.',
+      details,
+    },
+    { status: 400 },
+  );
+}
 
 async function handleGET(
   req: NextRequest,
@@ -42,14 +70,13 @@ async function handleGET(
     }
 
     const url = new URL(req.url);
-    const rawWindow = parseInt(
-      url.searchParams.get('historicalWindowDays') ?? String(DEFAULT_HISTORICAL_WINDOW),
-      10,
-    );
-    const historicalWindowDays =
-      isNaN(rawWindow) || rawWindow < 30 || rawWindow > 730
-        ? DEFAULT_HISTORICAL_WINDOW
-        : rawWindow;
+    const parsedSampleWindow = SampleWindowRequestSchema.safeParse(parseSampleWindowParams(url));
+    if (!parsedSampleWindow.success) {
+      metricResult = 'invalid_request';
+      return invalidSampleWindowResponse(
+        parsedSampleWindow.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+      );
+    }
     const requestedDataVersion = url.searchParams.get('dataVersion') ?? undefined;
 
     // Resolve the effective data snapshot and its syncedAt timestamp.
@@ -75,6 +102,20 @@ async function handleGET(
       syncedAt = lastSucceeded?.finishedAt ?? undefined;
     }
 
+    let sampleWindow;
+    try {
+      sampleWindow = resolveSampleWindow(parsedSampleWindow.data, {
+        timezone: scope.timezone,
+        ...(syncedAt ? { anchorDate: syncedAt } : {}),
+      });
+    } catch (err) {
+      if (err instanceof SampleWindowValidationError) {
+        metricResult = 'invalid_request';
+        return invalidSampleWindowResponse(err.details);
+      }
+      throw err;
+    }
+
     if (!effectiveDataVersion || !syncedAt) {
       metricResult = 'no_data';
       metricDayCount = 0;
@@ -83,7 +124,7 @@ async function handleGET(
         scopeId,
         dataVersion: '',
         syncedAt: new Date(0).toISOString(),
-        historicalWindowDays,
+        ...sampleWindow,
         sampleSize: 0,
         warnings: [
           { code: 'NO_DATA', message: 'No synchronized data available yet.' },
@@ -93,7 +134,9 @@ async function handleGET(
     }
 
     const days = await queryDailyThroughput(db, scopeId, scope.timezone, {
-      windowDays: historicalWindowDays,
+      sampleStartDate: sampleWindow.sampleStartDate,
+      sampleEndDate: sampleWindow.sampleEndDate,
+      anchorDate: syncedAt,
       dataVersion: effectiveDataVersion,
     });
 
@@ -106,7 +149,7 @@ async function handleGET(
       scopeId,
       dataVersion: effectiveDataVersion,
       syncedAt: syncedAt.toISOString(),
-      historicalWindowDays,
+      ...sampleWindow,
       sampleSize,
       warnings: [] satisfies Warning[],
       days,

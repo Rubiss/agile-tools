@@ -42,6 +42,7 @@ const {
   getFlowScope,
   getLastSucceededSyncRun,
   queryDailyThroughput,
+  computeForecastRequestHash,
   storeForecastCache,
 } = await import('@agile-tools/db');
 const { runWhenForecast } = await import('@agile-tools/analytics');
@@ -55,7 +56,7 @@ describe('POST /api/v1/scopes/:scopeId/forecasts', () => {
     vi.mocked(getFlowScope).mockResolvedValue({
       id: 'scope-1',
       workspaceId: 'workspace-1',
-      timezone: 'ETC',
+      timezone: 'UTC',
     } as never);
     vi.mocked(getLastSucceededSyncRun).mockResolvedValue({
       dataVersion: 'sync-1',
@@ -68,6 +69,11 @@ describe('POST /api/v1/scopes/:scopeId/forecasts', () => {
   });
 
   it('returns an actionable 409 when the scope timezone is invalid', async () => {
+    vi.mocked(getFlowScope).mockResolvedValue({
+      id: 'scope-1',
+      workspaceId: 'workspace-1',
+      timezone: 'ETC',
+    } as never);
     vi.mocked(queryDailyThroughput).mockRejectedValue(new InvalidTimeZoneError('ETC'));
 
     const response = await POST(
@@ -161,12 +167,74 @@ describe('POST /api/v1/scopes/:scopeId/forecasts', () => {
     expect(storeForecastCache).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
+        sampleWindow: expect.objectContaining({
+          sampleMode: 'rolling',
+          historicalWindowDays: 90,
+          sampleStartDate: '2026-01-21',
+          sampleEndDate: '2026-04-21',
+        }),
         sampleSize: 7,
       }),
     );
 
     const body = await response.json();
     expect(body.sampleSize).toBe(7);
+    expect(body.sampleMode).toBe('rolling');
+    expect(body.sampleStartDate).toBe('2026-01-21');
+  });
+
+  it('uses explicit date ranges for sampling and cache identity', async () => {
+    vi.mocked(queryDailyThroughput).mockResolvedValue([
+      { day: '2026-02-02', completedStoryCount: 2, complete: true },
+    ] as never);
+    vi.mocked(runWhenForecast).mockReturnValue({
+      warnings: [],
+      results: [{ confidenceLevel: 85, completionDate: '2026-05-01' }],
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/v1/scopes/scope-1/forecasts', {
+        method: 'POST',
+        headers: {
+          Origin: 'http://localhost',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'when',
+          remainingStoryCount: 12,
+          sampleMode: 'range',
+          sampleStartDate: '2026-02-01',
+          sampleEndDate: '2026-03-15',
+          confidenceLevels: [85],
+        }),
+      }),
+      { params: Promise.resolve({ scopeId: 'scope-1' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(computeForecastRequestHash).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sampleWindow: {
+          sampleMode: 'range',
+          sampleStartDate: '2026-02-01',
+          sampleEndDate: '2026-03-15',
+        },
+      }),
+    );
+    expect(queryDailyThroughput).toHaveBeenCalledWith(
+      expect.anything(),
+      'scope-1',
+      'UTC',
+      expect.objectContaining({
+        sampleStartDate: '2026-02-01',
+        sampleEndDate: '2026-03-15',
+      }),
+    );
+
+    const body = await response.json();
+    expect(body.sampleMode).toBe('range');
+    expect(body.historicalWindowDays).toBeUndefined();
+    expect(body.sampleStartDate).toBe('2026-02-01');
   });
 
   it('rejects impossible dates at the shared forecast request schema boundary', () => {

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import type { ThroughputDay, ThroughputResponse } from '@agile-tools/shared/contracts/api';
 import type { ForecastRequest, ForecastResponse } from '@agile-tools/shared/contracts/forecast';
+import { appendSampleWindowSearchParams, formatSampleWindowLabel } from '@agile-tools/shared';
 import {
   codeStyle,
   eyebrowStyle,
@@ -173,10 +174,8 @@ export function ForecastCalculationDrawer({
       return;
     }
 
-    const params = new URLSearchParams({
-      historicalWindowDays: String(response.historicalWindowDays),
-      dataVersion: response.dataVersion,
-    });
+    const params = new URLSearchParams({ dataVersion: response.dataVersion });
+    appendSampleWindowSearchParams(params, response);
 
     setLoading(true);
     setError(null);
@@ -205,7 +204,16 @@ export function ForecastCalculationDrawer({
         );
         setLoading(false);
       });
-  }, [open, response.dataVersion, response.historicalWindowDays, scopeId]);
+  }, [
+    open,
+    response,
+    response.dataVersion,
+    response.historicalWindowDays,
+    response.sampleEndDate,
+    response.sampleMode,
+    response.sampleStartDate,
+    scopeId,
+  ]);
 
   useEffect(() => {
     if (!open) {
@@ -335,7 +343,7 @@ export function ForecastCalculationDrawer({
               <article style={statCardStyle}>
                 <p style={statLabelStyle}>Historical window</p>
                 <p style={{ ...statValueStyle, fontSize: '1.05rem' }}>
-                  {response.historicalWindowDays} days
+                  {formatSampleWindowLabel(response)}
                 </p>
               </article>
               <article style={statCardStyle}>

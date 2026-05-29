@@ -55,12 +55,15 @@ describe('ForecastPage', () => {
   it('explains that the current partial day is excluded from the forecast sample', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValueOnce(
+      vi.fn().mockResolvedValue(
         jsonResponse({
           scopeId: 'scope-1',
           dataVersion: 'sync-1',
           syncedAt: '2026-04-21T00:00:00.000Z',
+          sampleMode: 'rolling',
           historicalWindowDays: 90,
+          sampleStartDate: '2026-01-21',
+          sampleEndDate: '2026-04-21',
           sampleSize: 7,
           warnings: [],
           days: [
@@ -79,7 +82,7 @@ describe('ForecastPage', () => {
       screen.getByText(/the current partial day can appear on the chart, but it is excluded from the forecast sample/i),
     ).toBeVisible();
     expect(
-      screen.getByText(/forecast sample: 7 completed stories from the last 90 days/i),
+      screen.getByText(/forecast sample: 7 completed stories from last 90 days/i),
     ).toBeVisible();
   });
 });

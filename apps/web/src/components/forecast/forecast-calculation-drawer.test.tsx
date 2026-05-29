@@ -16,6 +16,7 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 const request = {
   type: 'when' as const,
   remainingStoryCount: 10,
+  sampleMode: 'rolling' as const,
   historicalWindowDays: 60,
   confidenceLevels: [85, 95],
   iterations: 10000,
@@ -25,7 +26,10 @@ const response = {
   scopeId: '11111111-1111-1111-1111-111111111111',
   dataVersion: 'sync-1',
   type: 'when' as const,
+  sampleMode: 'rolling' as const,
   historicalWindowDays: 60,
+  sampleStartDate: '2026-02-20',
+  sampleEndDate: '2026-04-21',
   sampleSize: 4,
   iterations: 10000,
   warnings: [],
@@ -46,7 +50,10 @@ describe('ForecastCalculationDrawer', () => {
           scopeId: '11111111-1111-1111-1111-111111111111',
           dataVersion: 'sync-1',
           syncedAt: '2026-04-21T00:00:00.000Z',
+          sampleMode: 'rolling',
           historicalWindowDays: 60,
+          sampleStartDate: '2026-02-20',
+          sampleEndDate: '2026-04-21',
           sampleSize: 4,
           warnings: [],
           days: [
@@ -71,7 +78,7 @@ describe('ForecastCalculationDrawer', () => {
 
     expect(await screen.findByRole('dialog', { name: /how this forecast was calculated/i })).toBeVisible();
     expect(global.fetch).toHaveBeenCalledWith(
-      '/api/v1/scopes/scope-1/throughput?historicalWindowDays=60&dataVersion=sync-1',
+      '/api/v1/scopes/scope-1/throughput?dataVersion=sync-1&sampleMode=rolling&historicalWindowDays=60',
     );
     expect(screen.getByText('10 stories remaining')).toBeVisible();
     expect(screen.getByText('Zero-throughput days')).toBeVisible();

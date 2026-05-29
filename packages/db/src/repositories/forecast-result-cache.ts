@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import type { ForecastCachePayload } from '@agile-tools/shared/contracts/forecast';
+import type { ResolvedSampleWindow } from '@agile-tools/shared';
 
 export interface ForecastCacheKeyInput {
   type: 'when' | 'how_many';
-  historicalWindowDays: number;
+  sampleWindow: ResolvedSampleWindow;
   iterations: number;
   confidenceLevels: number[];
   remainingStoryCount?: number;
@@ -20,7 +21,7 @@ export interface ForecastCacheKeyInput {
 export function computeForecastRequestHash(input: ForecastCacheKeyInput): string {
   const normalized = JSON.stringify({
     type: input.type,
-    historicalWindowDays: input.historicalWindowDays,
+    sampleWindow: input.sampleWindow,
     iterations: input.iterations,
     confidenceLevels: [...input.confidenceLevels].sort((a, b) => a - b),
     ...(input.remainingStoryCount !== undefined && {
@@ -70,7 +71,7 @@ export async function lookupForecastCache(
 export interface StoreForecastCacheInput {
   scopeId: string;
   requestHash: string;
-  historicalWindowDays: number;
+  sampleWindow: ResolvedSampleWindow;
   iterations: number;
   confidenceLevels: number[];
   sampleSize: number;
@@ -96,7 +97,13 @@ export async function storeForecastCache(
   const createData: Prisma.ForecastResultCacheUncheckedCreateInput = {
     scopeId: input.scopeId,
     requestHash: input.requestHash,
-    historicalWindowDays: input.historicalWindowDays,
+    sampleMode: input.sampleWindow.sampleMode,
+    historicalWindowDays:
+      input.sampleWindow.sampleMode === 'rolling'
+        ? input.sampleWindow.historicalWindowDays
+        : null,
+    sampleStartDate: input.sampleWindow.sampleStartDate,
+    sampleEndDate: input.sampleWindow.sampleEndDate,
     iterations: input.iterations,
     confidenceLevels: input.confidenceLevels,
     sampleSize: input.sampleSize,

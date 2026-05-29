@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { TimeZoneIdentifierSchema } from '../timezones.js';
+import { ResolvedSampleWindowFields } from '../sample-window.js';
 
 // ─── Shared Primitives ───────────────────────────────────────────────────────
 
@@ -268,7 +269,7 @@ export const ThroughputResponseSchema = z.object({
   scopeId: z.string().uuid(),
   dataVersion: z.string(),
   syncedAt: z.string().datetime(),
-  historicalWindowDays: z.number().int(),
+  ...ResolvedSampleWindowFields,
   sampleSize: z.number().int(),
   warnings: z.array(WarningSchema),
   days: z.array(ThroughputDaySchema),

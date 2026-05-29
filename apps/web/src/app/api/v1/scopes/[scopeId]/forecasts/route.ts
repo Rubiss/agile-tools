@@ -5,6 +5,8 @@ import {
   logger,
   metricsClock,
   recordForecastRun,
+  resolveSampleWindow,
+  SampleWindowValidationError,
 } from '@agile-tools/shared';
 import {
   getPrismaClient,
@@ -136,6 +138,27 @@ async function handlePOST(
       syncedAt = lastSucceeded?.finishedAt ?? undefined;
     }
 
+    let sampleWindow;
+    try {
+      sampleWindow = resolveSampleWindow(request, {
+        timezone: scope.timezone,
+        ...(syncedAt ? { anchorDate: syncedAt } : {}),
+      });
+    } catch (err) {
+      if (err instanceof SampleWindowValidationError) {
+        metricResult = 'invalid_request';
+        return Response.json(
+          {
+            code: 'INVALID_REQUEST',
+            message: 'Invalid forecast sample window.',
+            details: err.details,
+          },
+          { status: 400 },
+        );
+      }
+      throw err;
+    }
+
     if (!effectiveDataVersion || !syncedAt) {
       metricResult = 'no_data';
       metricSampleSize = 0;
@@ -143,7 +166,7 @@ async function handlePOST(
         scopeId,
         dataVersion: '',
         type: request.type,
-        historicalWindowDays: request.historicalWindowDays,
+        ...sampleWindow,
         sampleSize: 0,
         iterations,
         warnings: [
@@ -156,7 +179,7 @@ async function handlePOST(
     // Check the forecast cache.
     const requestHash = computeForecastRequestHash({
       type: request.type,
-      historicalWindowDays: request.historicalWindowDays,
+      sampleWindow,
       iterations,
       confidenceLevels: request.confidenceLevels,
       ...(request.type === 'when' && { remainingStoryCount: request.remainingStoryCount }),
@@ -171,6 +194,7 @@ async function handlePOST(
         shapeForecastResponse({
           scopeId,
           request,
+          sampleWindow,
           dataVersion: effectiveDataVersion,
           sampleSize: cached.sampleSize,
           iterations,
@@ -185,7 +209,9 @@ async function handlePOST(
     // Query daily throughput — use only fully-completed days for Monte Carlo sampling
     // to avoid biasing forecasts with the partial current day.
     const allDays = await queryDailyThroughput(db, scopeId, scope.timezone, {
-      windowDays: request.historicalWindowDays,
+      sampleStartDate: sampleWindow.sampleStartDate,
+      sampleEndDate: sampleWindow.sampleEndDate,
+      anchorDate: syncedAt,
       dataVersion: effectiveDataVersion,
     });
     const completeDays = getForecastSampleDays(allDays);
@@ -227,7 +253,7 @@ async function handlePOST(
     await storeForecastCache(db, {
       scopeId,
       requestHash,
-      historicalWindowDays: request.historicalWindowDays,
+      sampleWindow,
       iterations,
       confidenceLevels: request.confidenceLevels,
       sampleSize,
@@ -254,6 +280,7 @@ async function handlePOST(
       shapeForecastResponse({
         scopeId,
         request,
+        sampleWindow,
         dataVersion: effectiveDataVersion,
         sampleSize,
         iterations,

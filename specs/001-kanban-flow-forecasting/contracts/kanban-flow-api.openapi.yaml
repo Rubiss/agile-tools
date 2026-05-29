@@ -441,11 +441,35 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ScopeId'
         - in: query
+          name: sampleMode
+          schema:
+            type: string
+            enum: [rolling, range]
+          description: Use rolling with historicalWindowDays or range with sampleStartDate/sampleEndDate.
+        - in: query
           name: historicalWindowDays
           schema:
             type: integer
             minimum: 30
             maximum: 730
+          description: Rolling sample size in calendar days. Defaults to 90 and remains accepted for legacy clients.
+        - in: query
+          name: sampleStartDate
+          schema:
+            type: string
+            format: date
+          description: Inclusive local start date when sampleMode=range.
+        - in: query
+          name: sampleEndDate
+          schema:
+            type: string
+            format: date
+          description: Inclusive local end date when sampleMode=range.
+        - in: query
+          name: dataVersion
+          schema:
+            type: string
+          description: Optional sync snapshot pin.
       responses:
         '200':
           description: Throughput analytics
@@ -953,7 +977,7 @@ components:
           format: date-time
     ThroughputResponse:
       type: object
-      required: [scopeId, dataVersion, syncedAt, historicalWindowDays, sampleSize, warnings, days]
+      required: [scopeId, dataVersion, syncedAt, sampleMode, sampleStartDate, sampleEndDate, sampleSize, warnings, days]
       properties:
         scopeId:
           type: string
@@ -963,8 +987,19 @@ components:
         syncedAt:
           type: string
           format: date-time
+        sampleMode:
+          type: string
+          enum: [rolling, range]
         historicalWindowDays:
           type: integer
+          nullable: true
+          description: Present for rolling samples and legacy clients.
+        sampleStartDate:
+          type: string
+          format: date
+        sampleEndDate:
+          type: string
+          format: date
         sampleSize:
           type: integer
           description: Completed stories in the forecast-usable sample for the selected window, excluding any current incomplete day.
@@ -990,7 +1025,7 @@ components:
     ForecastRequest:
       oneOf:
         - type: object
-          required: [type, remainingStoryCount, historicalWindowDays, confidenceLevels]
+          required: [type, remainingStoryCount, confidenceLevels]
           properties:
             type:
               type: string
@@ -1002,6 +1037,16 @@ components:
               type: integer
               minimum: 30
               maximum: 730
+              description: Rolling sample size. Defaults to 90 when sampleMode is omitted.
+            sampleMode:
+              type: string
+              enum: [rolling, range]
+            sampleStartDate:
+              type: string
+              format: date
+            sampleEndDate:
+              type: string
+              format: date
             confidenceLevels:
               type: array
               items:
@@ -1015,7 +1060,7 @@ components:
             dataVersion:
               type: string
         - type: object
-          required: [type, targetDate, historicalWindowDays, confidenceLevels]
+          required: [type, targetDate, confidenceLevels]
           properties:
             type:
               type: string
@@ -1027,6 +1072,16 @@ components:
               type: integer
               minimum: 30
               maximum: 730
+              description: Rolling sample size. Defaults to 90 when sampleMode is omitted.
+            sampleMode:
+              type: string
+              enum: [rolling, range]
+            sampleStartDate:
+              type: string
+              format: date
+            sampleEndDate:
+              type: string
+              format: date
             confidenceLevels:
               type: array
               items:
@@ -1041,7 +1096,7 @@ components:
               type: string
     ForecastResponse:
       type: object
-      required: [scopeId, dataVersion, type, historicalWindowDays, sampleSize, iterations, warnings, results]
+      required: [scopeId, dataVersion, type, sampleMode, sampleStartDate, sampleEndDate, sampleSize, iterations, warnings, results]
       properties:
         scopeId:
           type: string
@@ -1051,8 +1106,19 @@ components:
         type:
           type: string
           enum: [when, how_many]
+        sampleMode:
+          type: string
+          enum: [rolling, range]
         historicalWindowDays:
           type: integer
+          nullable: true
+          description: Present for rolling samples and legacy clients.
+        sampleStartDate:
+          type: string
+          format: date
+        sampleEndDate:
+          type: string
+          format: date
         sampleSize:
           type: integer
           description: Completed stories included in the Monte Carlo sample for this forecast.

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { ForecastResponse, ForecastResult } from '@agile-tools/shared/contracts/forecast';
 import type { ForecastRequest } from '@agile-tools/shared/contracts/forecast';
+import { formatSampleWindowLabel } from '@agile-tools/shared';
 import {
   buttonStyle,
   codeStyle,
@@ -39,8 +40,7 @@ function formatResult(result: ForecastResult, type: 'when' | 'how_many'): string
 }
 
 export function ForecastResults({ scopeId, request, response }: ForecastResultsProps) {
-  const { type, results, warnings, sampleSize, iterations, dataVersion, historicalWindowDays } =
-    response;
+  const { type, results, warnings, sampleSize, iterations, dataVersion } = response;
   const [notebookOpen, setNotebookOpen] = useState(false);
 
   const hasLowSample = warnings.some(
@@ -135,7 +135,7 @@ export function ForecastResults({ scopeId, request, response }: ForecastResultsP
           Iterations: <strong style={{ color: palette.text }}>{iterations.toLocaleString()}</strong>
         </span>
         <span>
-          Window: <strong style={{ color: palette.text }}>{historicalWindowDays} days</strong>
+          Window: <strong style={{ color: palette.text }}>{formatSampleWindowLabel(response)}</strong>
         </span>
         <span>
           Data version: <span style={codeStyle}>{dataVersion || '—'}</span>

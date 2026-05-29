@@ -23,6 +23,7 @@ describe('ForecastForm', () => {
     expect(onSubmit).toHaveBeenCalledWith({
       type: 'when',
       remainingStoryCount: 24,
+      sampleMode: 'rolling',
       historicalWindowDays: 30,
       confidenceLevels: [50, 70, 85, 95],
     });
@@ -66,7 +67,36 @@ describe('ForecastForm', () => {
     expect(onSubmit).toHaveBeenCalledWith({
       type: 'how_many',
       targetDate: futureDate,
+      sampleMode: 'rolling',
       historicalWindowDays: 90,
+      confidenceLevels: [50, 70, 85, 95],
+    });
+  });
+
+  it('submits an explicit date range sample', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(<ForecastForm onSubmit={onSubmit} />);
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /historical sample mode/i }),
+      'range',
+    );
+    fireEvent.change(screen.getByLabelText(/sample start date/i), {
+      target: { value: '2026-01-01' },
+    });
+    fireEvent.change(screen.getByLabelText(/sample end date/i), {
+      target: { value: '2026-03-31' },
+    });
+    await user.click(screen.getByRole('button', { name: /run forecast/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      type: 'when',
+      remainingStoryCount: 10,
+      sampleMode: 'range',
+      sampleStartDate: '2026-01-01',
+      sampleEndDate: '2026-03-31',
       confidenceLevels: [50, 70, 85, 95],
     });
   });

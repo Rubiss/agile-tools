@@ -43,3 +43,30 @@ export {
   formatDateInTimezone,
   isWeekendDate,
 } from './working-days.js';
+
+export {
+  addLocalDateDays,
+  appendSampleWindowSearchParams,
+  DEFAULT_SAMPLE_WINDOW_DAYS,
+  differenceInLocalCalendarDays,
+  formatSampleWindowLabel,
+  HistoricalWindowDaysSchema,
+  LocalDateSchema,
+  MAX_SAMPLE_WINDOW_DAYS,
+  MIN_SAMPLE_WINDOW_DAYS,
+  normalizeSampleWindow,
+  ResolvedSampleWindowSchema,
+  resolveSampleWindow,
+  SampleModeSchema,
+  SampleWindowRequestSchema,
+  SampleWindowValidationError,
+  sampleWindowRequestFields,
+  validateSampleWindowRequestShape,
+} from './sample-window.js';
+export type {
+  NormalizedSampleWindow,
+  RangeSampleWindow,
+  ResolvedSampleWindow,
+  RollingSampleWindow,
+  SampleMode,
+} from './sample-window.js';

@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import {
+  addLocalDateDays,
   bucketToPreviousWorkingDay,
   differenceInWorkingDays,
   formatDateInTimezone as sharedFormatDateInTimezone,
@@ -109,16 +110,27 @@ export async function queryDailyThroughput(
   db: PrismaClient,
   scopeId: string,
   timezone: string,
-  options?: { windowDays?: number; dataVersion?: string },
+  options?: {
+    windowDays?: number;
+    dataVersion?: string;
+    sampleStartDate?: string;
+    sampleEndDate?: string;
+    anchorDate?: Date;
+  },
 ): Promise<DailyThroughputRow[]> {
   const windowDays = options?.windowDays ?? DEFAULT_THROUGHPUT_WINDOW_DAYS;
-  const now = new Date();
-  const windowStart = new Date(now.getTime() - windowDays * MS_PER_DAY);
+  const anchorDate = options?.anchorDate ?? new Date();
+  const anchorLocalDate = sharedFormatDateInTimezone(anchorDate, timezone);
+  const sampleStartDate = options?.sampleStartDate ?? addLocalDateDays(anchorLocalDate, -windowDays);
+  const sampleEndDate = options?.sampleEndDate ?? anchorLocalDate;
+  const bucketStartDate = bucketToPreviousWorkingDay(sampleStartDate);
+  const queryStart = new Date(`${addLocalDateDays(sampleStartDate, -2)}T00:00:00.000Z`);
+  const queryEnd = new Date(`${addLocalDateDays(sampleEndDate, 2)}T23:59:59.999Z`);
 
   const completedItems = await db.workItem.findMany({
     where: {
       scopeId,
-      completedAt: { not: null, gte: windowStart },
+      completedAt: { not: null, gte: queryStart, lte: queryEnd },
       excludedReason: null,
       ...(options?.dataVersion ? { lastSyncRunId: options.dataVersion } : {}),
     },
@@ -131,35 +143,28 @@ export async function queryDailyThroughput(
   // working-day throughput without creating weekend buckets.
   const countsByDay = new Map<string, number>();
   for (const item of completedItems) {
-    const day = bucketToPreviousWorkingDay(sharedFormatDateInTimezone(item.completedAt!, timezone));
+    const completedLocalDate = sharedFormatDateInTimezone(item.completedAt!, timezone);
+    if (completedLocalDate < sampleStartDate || completedLocalDate > sampleEndDate) {
+      continue;
+    }
+    const day = bucketToPreviousWorkingDay(completedLocalDate);
+    if (day < bucketStartDate || day > sampleEndDate) {
+      continue;
+    }
     countsByDay.set(day, (countsByDay.get(day) ?? 0) + 1);
   }
 
-  const todayLocal = sharedFormatDateInTimezone(now, timezone);
-  const currentWorkingDay = bucketToPreviousWorkingDay(todayLocal);
+  const currentWorkingDay = bucketToPreviousWorkingDay(anchorLocalDate);
 
-  // Generate one entry per working day from windowStart → today (inclusive).
-  // Walk forward 24 h at a time and deduplicate formatted dates to handle DST
-  // transitions (where a 24 h step might land on the same or a skipped local date).
+  // Generate one entry per working day from the selected local-date range.
   const days: string[] = [];
-  for (let i = windowDays; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * MS_PER_DAY);
-    const day = sharedFormatDateInTimezone(d, timezone);
-    if (!isWeekendDate(day) && (days.length === 0 || days[days.length - 1] !== day)) {
+  if (bucketStartDate < sampleStartDate && countsByDay.has(bucketStartDate)) {
+    days.push(bucketStartDate);
+  }
+  for (let day = sampleStartDate; day <= sampleEndDate; day = addLocalDateDays(day, 1)) {
+    if (!isWeekendDate(day)) {
       days.push(day);
     }
-  }
-
-  const earliestBucketDay = Array.from(countsByDay.keys()).sort()[0];
-  if (earliestBucketDay && (days.length === 0 || earliestBucketDay < days[0]!)) {
-    days.unshift(earliestBucketDay);
-  }
-
-  // Ensure the current working-day bucket is always the last entry. On
-  // weekends, that bucket is the prior Friday because weekend completions roll
-  // back there.
-  if (days.length === 0 || days[days.length - 1] !== currentWorkingDay) {
-    days.push(currentWorkingDay);
   }
 
   return days.map((day) => ({

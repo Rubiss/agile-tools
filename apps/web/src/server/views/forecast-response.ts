@@ -1,9 +1,11 @@
 import type { ForecastResponse, ForecastRequest } from '@agile-tools/shared/contracts/forecast';
 import type { MonteCarloForecastResult } from '@agile-tools/analytics';
+import type { ResolvedSampleWindow } from '@agile-tools/shared';
 
 export interface ShapeForecastResponseInput {
   scopeId: string;
   request: ForecastRequest;
+  sampleWindow: ResolvedSampleWindow;
   /** The resolved data snapshot identifier pinned to this forecast. */
   dataVersion: string;
   /** Number of completed stories in the historical sample. */
@@ -26,13 +28,13 @@ export interface ShapeForecastResponseInput {
  * same sync snapshot, ensuring reproducible results even as new syncs arrive.
  */
 export function shapeForecastResponse(input: ShapeForecastResponseInput): ForecastResponse {
-  const { scopeId, request, dataVersion, sampleSize, iterations, monteCarlo } = input;
+  const { scopeId, request, sampleWindow, dataVersion, sampleSize, iterations, monteCarlo } = input;
 
   return {
     scopeId,
     dataVersion,
     type: request.type,
-    historicalWindowDays: request.historicalWindowDays,
+    ...sampleWindow,
     sampleSize,
     iterations,
     warnings: monteCarlo.warnings,
