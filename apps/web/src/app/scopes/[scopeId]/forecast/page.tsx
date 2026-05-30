@@ -111,7 +111,7 @@ export default function ForecastPage() {
       })
       .then((data) => {
         setThroughput(data);
-        if (!pinnedDataVersion && data.dataVersion) {
+        if (data.dataVersion && data.dataVersion !== pinnedDataVersion) {
           setPinnedDataVersion(data.dataVersion);
         }
         setThroughputLoading(false);

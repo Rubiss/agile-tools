@@ -12,7 +12,6 @@ import {
   getPrismaClient,
   getFlowScope,
   getLastSucceededSyncRun,
-  getSyncRunByDataVersion,
   queryDailyThroughput,
 } from '@agile-tools/db';
 import type { ThroughputResponse, Warning } from '@agile-tools/shared/contracts/api';
@@ -77,30 +76,11 @@ async function handleGET(
         parsedSampleWindow.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
       );
     }
-    const requestedDataVersion = url.searchParams.get('dataVersion') ?? undefined;
-
-    // Resolve the effective data snapshot and its syncedAt timestamp.
-    let effectiveDataVersion: string | undefined;
-    let syncedAt: Date | undefined;
-
-    if (requestedDataVersion) {
-      const syncRun = await getSyncRunByDataVersion(
-        db,
-        ctx.workspaceId,
-        scopeId,
-        requestedDataVersion,
-      );
-      if (syncRun?.dataVersion && syncRun.finishedAt) {
-        effectiveDataVersion = syncRun.dataVersion;
-        syncedAt = syncRun.finishedAt;
-      }
-    }
-
-    if (!effectiveDataVersion) {
-      const lastSucceeded = await getLastSucceededSyncRun(db, ctx.workspaceId, scopeId);
-      effectiveDataVersion = lastSucceeded?.dataVersion ?? undefined;
-      syncedAt = lastSucceeded?.finishedAt ?? undefined;
-    }
+    // Resolve to the latest retained projection snapshot. WorkItem rows are
+    // overwritten on each sync, so older dataVersion pins cannot be replayed.
+    const lastSucceeded = await getLastSucceededSyncRun(db, ctx.workspaceId, scopeId);
+    const effectiveDataVersion = lastSucceeded?.dataVersion ?? undefined;
+    const syncedAt = lastSucceeded?.finishedAt ?? undefined;
 
     let sampleWindow;
     try {
