@@ -44,6 +44,7 @@ export function ForecastForm({
     historicalWindowDays: DEFAULT_SAMPLE_WINDOW_DAYS,
   });
   const sampleWindow = controlledSampleWindow ?? internalSampleWindow;
+  const [showCustomRollingWindow, setShowCustomRollingWindow] = useState(false);
   const [confidenceLevels, setConfidenceLevels] = useState<number[]>([50, 70, 85, 95]);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -101,7 +102,8 @@ export function ForecastForm({
     sampleWindow.sampleMode === 'rolling'
       ? sampleWindow.historicalWindowDays
       : DEFAULT_SAMPLE_WINDOW_DAYS;
-  const rollingSelectValue = windows.includes(rollingDays) ? String(rollingDays) : 'custom';
+  const rollingDaysIsPreset = windows.includes(rollingDays);
+  const rollingSelectValue = showCustomRollingWindow || !rollingDaysIsPreset ? 'custom' : String(rollingDays);
   const rangeStartDate =
     sampleWindow.sampleMode === 'range' ? sampleWindow.sampleStartDate : dateOffset(-90);
   const rangeEndDate =
@@ -199,12 +201,14 @@ export function ForecastForm({
           value={sampleWindow.sampleMode}
           onChange={(e) => {
             if (e.target.value === 'range') {
+              setShowCustomRollingWindow(false);
               updateSampleWindow({
                 sampleMode: 'range',
                 sampleStartDate: rangeStartDate,
                 sampleEndDate: rangeEndDate,
               });
             } else {
+              setShowCustomRollingWindow(!rollingDaysIsPreset);
               updateSampleWindow({ sampleMode: 'rolling', historicalWindowDays: rollingDays });
             }
           }}
@@ -223,8 +227,10 @@ export function ForecastForm({
               value={rollingSelectValue}
               onChange={(e) => {
                 if (e.target.value === 'custom') {
+                  setShowCustomRollingWindow(true);
                   updateSampleWindow({ sampleMode: 'rolling', historicalWindowDays: rollingDays });
                 } else {
+                  setShowCustomRollingWindow(false);
                   updateSampleWindow({
                     sampleMode: 'rolling',
                     historicalWindowDays: Number(e.target.value),

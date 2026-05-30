@@ -1025,6 +1025,10 @@ components:
     ForecastRequest:
       oneOf:
         - type: object
+          not:
+            anyOf:
+              - required: [sampleStartDate]
+              - required: [sampleEndDate]
           required: [type, remainingStoryCount, confidenceLevels]
           properties:
             type:
@@ -1040,7 +1044,33 @@ components:
               description: Rolling sample size. Defaults to 90 when sampleMode is omitted.
             sampleMode:
               type: string
-              enum: [rolling, range]
+              enum: [rolling]
+            confidenceLevels:
+              type: array
+              items:
+                type: integer
+                minimum: 1
+                maximum: 99
+            iterations:
+              type: integer
+              minimum: 1000
+              maximum: 50000
+            dataVersion:
+              type: string
+        - type: object
+          not:
+            required: [historicalWindowDays]
+          required: [type, remainingStoryCount, confidenceLevels, sampleMode, sampleStartDate, sampleEndDate]
+          properties:
+            type:
+              type: string
+              enum: [when]
+            remainingStoryCount:
+              type: integer
+              minimum: 1
+            sampleMode:
+              type: string
+              enum: [range]
             sampleStartDate:
               type: string
               format: date
@@ -1060,6 +1090,10 @@ components:
             dataVersion:
               type: string
         - type: object
+          not:
+            anyOf:
+              - required: [sampleStartDate]
+              - required: [sampleEndDate]
           required: [type, targetDate, confidenceLevels]
           properties:
             type:
@@ -1075,7 +1109,33 @@ components:
               description: Rolling sample size. Defaults to 90 when sampleMode is omitted.
             sampleMode:
               type: string
-              enum: [rolling, range]
+              enum: [rolling]
+            confidenceLevels:
+              type: array
+              items:
+                type: integer
+                minimum: 1
+                maximum: 99
+            iterations:
+              type: integer
+              minimum: 1000
+              maximum: 50000
+            dataVersion:
+              type: string
+        - type: object
+          not:
+            required: [historicalWindowDays]
+          required: [type, targetDate, confidenceLevels, sampleMode, sampleStartDate, sampleEndDate]
+          properties:
+            type:
+              type: string
+              enum: [how_many]
+            targetDate:
+              type: string
+              format: date
+            sampleMode:
+              type: string
+              enum: [range]
             sampleStartDate:
               type: string
               format: date

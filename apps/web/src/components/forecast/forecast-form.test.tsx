@@ -100,4 +100,17 @@ describe('ForecastForm', () => {
       confidenceLevels: [50, 70, 85, 95],
     });
   });
+
+  it('shows the custom rolling-days input when Custom is selected from a preset', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(<ForecastForm onSubmit={onSubmit} historicalWindowOptions={[30, 90]} />);
+
+    expect(screen.queryByRole('spinbutton', { name: /custom rolling window days/i })).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /historical window in days/i }), 'custom');
+
+    expect(screen.getByRole('spinbutton', { name: /custom rolling window days/i })).toHaveValue(90);
+  });
 });
