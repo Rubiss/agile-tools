@@ -44,6 +44,10 @@ function getProblemMessage(problem: ProblemResponse | null, fallbackMessage: str
   return problem?.details?.[0] ?? problem?.message ?? fallbackMessage;
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
 function defaultSampleWindow(): NormalizedSampleWindow {
   return { sampleMode: 'rolling', historicalWindowDays: DEFAULT_SAMPLE_WINDOW_DAYS };
 }
@@ -87,6 +91,7 @@ export default function ForecastPage() {
 
   useEffect(() => {
     if (!scopeId) return;
+    const controller = new AbortController();
     const params = new URLSearchParams();
     appendSampleWindowSearchParams(params, sampleWindow);
     if (pinnedDataVersion) {
@@ -95,7 +100,9 @@ export default function ForecastPage() {
 
     setThroughputLoading(true);
     setThroughputError(null);
-    fetch(`/api/v1/scopes/${scopeId}/throughput?${params.toString()}`)
+    fetch(`/api/v1/scopes/${scopeId}/throughput?${params.toString()}`, {
+      signal: controller.signal,
+    })
       .then(async (res) => {
         const body = (await res.json().catch(() => null)) as ProblemResponse | ThroughputResponse | null;
         if (res.status === 401) throw new Error('Authentication required. Please sign in.');
@@ -110,6 +117,7 @@ export default function ForecastPage() {
         return body as ThroughputResponse;
       })
       .then((data) => {
+        if (controller.signal.aborted) return;
         setThroughput(data);
         if (data.dataVersion && data.dataVersion !== pinnedDataVersion) {
           setPinnedDataVersion(data.dataVersion);
@@ -117,9 +125,14 @@ export default function ForecastPage() {
         setThroughputLoading(false);
       })
       .catch((err: unknown) => {
+        if (controller.signal.aborted || isAbortError(err)) return;
         setThroughputError(err instanceof Error ? err.message : 'Failed to load throughput.');
         setThroughputLoading(false);
       });
+
+    return () => {
+      controller.abort();
+    };
   }, [pinnedDataVersion, sampleWindow, scopeId]);
 
   useEffect(() => {
