@@ -10,8 +10,17 @@ describe('buildJiraBoardUrl', () => {
   });
 
   it('preserves Jira base paths', () => {
+    expect(buildJiraBoardUrl('https://jira.example.internal/jira', '7')).toBe(
+      'https://jira.example.internal/jira/secure/RapidBoard.jspa?rapidView=7',
+    );
     expect(buildJiraBoardUrl('https://jira.example.internal/jira/', '7')).toBe(
       'https://jira.example.internal/jira/secure/RapidBoard.jspa?rapidView=7',
+    );
+  });
+
+  it('rejects non-http Jira base URL schemes', () => {
+    expect(() => buildJiraBoardUrl('javascript:alert(1)', 42)).toThrow(
+      'Jira base URL must use http or https.',
     );
   });
 });

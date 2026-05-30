@@ -1,6 +1,15 @@
 export function buildJiraBoardUrl(jiraBaseUrl: string, boardId: number | string): string {
-  const trimmedBaseUrl = jiraBaseUrl.endsWith('/') ? jiraBaseUrl.slice(0, -1) : jiraBaseUrl;
-  const url = new URL(`${trimmedBaseUrl}/secure/RapidBoard.jspa`);
+  const baseUrl = new URL(jiraBaseUrl);
+  if (baseUrl.protocol !== 'http:' && baseUrl.protocol !== 'https:') {
+    throw new Error('Jira base URL must use http or https.');
+  }
+  baseUrl.search = '';
+  baseUrl.hash = '';
+  if (!baseUrl.pathname.endsWith('/')) {
+    baseUrl.pathname = `${baseUrl.pathname}/`;
+  }
+
+  const url = new URL('secure/RapidBoard.jspa', baseUrl);
   url.searchParams.set('rapidView', String(boardId));
   return url.toString();
 }

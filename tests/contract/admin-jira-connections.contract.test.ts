@@ -178,6 +178,17 @@ describe('POST /v1/admin/jira-connections', () => {
     expect(ProblemSchema.safeParse(body).success).toBe(true);
   });
 
+  it('returns 400 when the base URL does not use http or https', async () => {
+    const req = makeRequest('http://localhost/api/v1/admin/jira-connections', 'POST', {
+      baseUrl: 'javascript:alert(1)',
+      pat: TEST_PAT,
+    });
+    const res = await createConnection(req);
+    expect(res.status).toBe(400);
+    const body = ProblemSchema.parse(await res.json());
+    expect(body.details).toContain('baseUrl: URL must use http or https.');
+  });
+
   it('returns 401 when no session cookie is present', async () => {
     vi.mocked(cookies).mockReturnValue(makeCookieStore(null));
     const req = makeRequest('http://localhost/api/v1/admin/jira-connections', 'POST', {
@@ -301,6 +312,19 @@ describe('PUT /v1/admin/jira-connections/:id', () => {
       params: Promise.resolve({ connectionId: missingId }),
     });
     expect(res.status).toBe(404);
+  });
+
+  it('returns 400 when updating to a non-http base URL', async () => {
+    const req = makeRequest(`http://localhost/api/v1/admin/jira-connections/${connectionId}`, 'PUT', {
+      baseUrl: 'javascript:alert(1)',
+      displayName: 'Unsafe Jira',
+    });
+    const res = await updateConnection(req, {
+      params: Promise.resolve({ connectionId }),
+    });
+    expect(res.status).toBe(400);
+    const body = ProblemSchema.parse(await res.json());
+    expect(body.details).toContain('baseUrl: URL must use http or https.');
   });
 });
 

@@ -36,9 +36,18 @@ export const ConnectionHealthStatusSchema = z.enum([
 ]);
 export type ConnectionHealthStatus = z.infer<typeof ConnectionHealthStatusSchema>;
 
+const HttpUrlSchema = z.string().url().refine((value) => {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}, 'URL must use http or https.');
+
 export const JiraConnectionSchema = z.object({
   id: z.string().uuid(),
-  baseUrl: z.string().url(),
+  baseUrl: HttpUrlSchema,
   displayName: z.string().optional(),
   healthStatus: ConnectionHealthStatusSchema,
   lastValidatedAt: z.string().datetime().optional(),
@@ -48,7 +57,7 @@ export const JiraConnectionSchema = z.object({
 export type JiraConnection = z.infer<typeof JiraConnectionSchema>;
 
 export const CreateJiraConnectionRequestSchema = z.object({
-  baseUrl: z.string().url(),
+  baseUrl: HttpUrlSchema,
   /** Raw PAT — write-only; never returned in responses. */
   pat: z.string().min(1),
   displayName: z.string().optional(),
@@ -56,7 +65,7 @@ export const CreateJiraConnectionRequestSchema = z.object({
 export type CreateJiraConnectionRequest = z.infer<typeof CreateJiraConnectionRequestSchema>;
 
 export const UpdateJiraConnectionRequestSchema = z.object({
-  baseUrl: z.string().url(),
+  baseUrl: HttpUrlSchema,
   /** Raw PAT replacement — optional so display-name-only edits do not force rotation. */
   pat: z.string().min(1).optional(),
   displayName: z.string().optional(),
@@ -105,7 +114,7 @@ export const FlowScopeSchema = z.object({
   connectionId: z.string().uuid(),
   boardId: z.number().int(),
   boardName: z.string().optional(),
-  jiraDashboardUrl: z.string().url().optional(),
+  jiraDashboardUrl: HttpUrlSchema.optional(),
   timezone: z.string(),
   includedIssueTypeIds: z.array(z.string()),
   includedIssueTypes: z.array(NamedValueSchema).optional(),
