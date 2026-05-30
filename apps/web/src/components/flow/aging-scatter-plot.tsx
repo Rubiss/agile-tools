@@ -323,13 +323,12 @@ export function AgingScatterPlot({
           return isScatterZone(zone) ? scatterZoneColors[zone] : scatterColors.neutral;
         }}
         nodeSize={10}
-        useMesh={true}
+        useMesh={false}
         layers={[
           'grid',
           'axes',
           thresholdLayer,
           'nodes',
-          'mesh',
           'legends',
           'annotations',
         ]}
