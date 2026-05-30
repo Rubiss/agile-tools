@@ -430,7 +430,11 @@ async function handlePUT(
       }
     }
 
-    return Response.json(mapScope(txResult.updated));
+    const responseConnection = await getJiraConnection(prisma, ctx.workspaceId, txResult.updated.connectionId);
+    return Response.json(mapScope(
+      txResult.updated,
+      responseConnection ? { jiraBaseUrl: responseConnection.baseUrl } : undefined,
+    ));
   } catch (err) {
     if (err instanceof ResponseError) return err.response;
     logger.error('Failed to update flow scope', {

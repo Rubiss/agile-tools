@@ -105,6 +105,7 @@ export const FlowScopeSchema = z.object({
   connectionId: z.string().uuid(),
   boardId: z.number().int(),
   boardName: z.string().optional(),
+  jiraDashboardUrl: z.string().url().optional(),
   timezone: z.string(),
   includedIssueTypeIds: z.array(z.string()),
   includedIssueTypes: z.array(NamedValueSchema).optional(),

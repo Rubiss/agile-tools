@@ -3,6 +3,7 @@ import { getWorkspaceContext } from '@/server/auth';
 import { getLocalDemoDefaultPath, isLocalDemoEnabled } from '@/server/dev-demo';
 import { getLocalAdminDefaultPath, isLocalAdminBootstrapAvailable } from '@/server/local-bootstrap';
 import { LocalBootstrapForm } from '@/components/app/demo-bootstrap-form';
+import { buildJiraBoardUrl } from '@/lib/jira-links';
 import {
   buttonStyle,
   codeStyle,
@@ -110,6 +111,7 @@ export default async function HomePage() {
     listJiraConnections(db, ctx.workspaceId),
     listFlowScopes(db, ctx.workspaceId),
   ]);
+  const jiraBaseUrlByConnectionId = new Map(connections.map((connection) => [connection.id, connection.baseUrl]));
 
   return (
     <main style={{ ...pageShellStyle, maxWidth: '1040px' }}>
@@ -169,33 +171,47 @@ export default async function HomePage() {
           <p style={sectionCopyStyle}>No scopes are configured in this workspace yet.</p>
         ) : (
           <div style={sectionStackStyle}>
-            {scopes.map((scope) => (
-              <div
-                key={scope.id}
-                style={{
-                  ...itemCardStyle,
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  gap: '1rem',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div>
-                  <h3 style={{ ...sectionTitleStyle, fontSize: '1.2rem' }}>{scope.boardName}</h3>
-                  <p style={{ ...sectionCopyStyle, marginTop: '0.5rem' }}>
-                    Board {scope.boardId} · every {scope.syncIntervalMinutes} minutes · {scope.status}
-                  </p>
+            {scopes.map((scope) => {
+              const jiraBaseUrl = jiraBaseUrlByConnectionId.get(scope.connectionId);
+              const jiraDashboardUrl = jiraBaseUrl ? buildJiraBoardUrl(jiraBaseUrl, scope.boardId) : null;
+              return (
+                <div
+                  key={scope.id}
+                  style={{
+                    ...itemCardStyle,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '1rem',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div>
+                    <h3 style={{ ...sectionTitleStyle, fontSize: '1.2rem' }}>{scope.boardName}</h3>
+                    <p style={{ ...sectionCopyStyle, marginTop: '0.5rem' }}>
+                      Board {scope.boardId} · every {scope.syncIntervalMinutes} minutes · {scope.status}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <a href={`/scopes/${scope.id}`} style={linkStyle}>
+                      Scope →
+                    </a>
+                    <a href={`/scopes/${scope.id}/forecast`} style={linkStyle}>
+                      Forecast →
+                    </a>
+                    {jiraDashboardUrl && (
+                      <a
+                        href={jiraDashboardUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={linkStyle}
+                      >
+                        Jira dashboard ↗
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  <a href={`/scopes/${scope.id}`} style={linkStyle}>
-                    Scope →
-                  </a>
-                  <a href={`/scopes/${scope.id}/forecast`} style={linkStyle}>
-                    Forecast →
-                  </a>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

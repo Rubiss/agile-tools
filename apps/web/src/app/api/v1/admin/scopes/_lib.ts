@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { NamedValueSchema } from '@agile-tools/shared/contracts/api';
 import { ResponseError } from '@/server/errors';
 import { enqueueScopeSyncJob } from '@/server/queue';
+import { buildJiraBoardUrl } from '@/lib/jira-links';
 
 type DbFlowScope = NonNullable<Awaited<ReturnType<typeof getFlowScope>>>;
 type DbSyncRun = NonNullable<Awaited<ReturnType<typeof getSyncRun>>>;
@@ -80,13 +81,19 @@ function parseStoredIncludedIssueTypes(scope: DbFlowScope): NamedValue[] | undef
  * Converts the stored string boardId back to a number, and omits boardName
  * when not present.
  */
-export function mapScope(scope: DbFlowScope): ApiFlowScope {
+export function mapScope(
+  scope: DbFlowScope,
+  options?: { jiraBaseUrl: string },
+): ApiFlowScope {
   const includedIssueTypes = parseStoredIncludedIssueTypes(scope);
   return {
     id: scope.id,
     connectionId: scope.connectionId,
     boardId: Number(scope.boardId),
     ...(scope.boardName ? { boardName: scope.boardName } : {}),
+    ...(options?.jiraBaseUrl
+      ? { jiraDashboardUrl: buildJiraBoardUrl(options.jiraBaseUrl, scope.boardId) }
+      : {}),
     timezone: scope.timezone,
     includedIssueTypeIds: scope.includedIssueTypeIds,
     ...(includedIssueTypes ? { includedIssueTypes } : {}),

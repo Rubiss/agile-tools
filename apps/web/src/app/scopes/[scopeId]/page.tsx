@@ -18,6 +18,7 @@ import {
   eyebrowStyle,
   heroCardStyle,
   heroTitleStyle,
+  linkStyle,
   noticeStyle,
   pageShellStyle,
   sectionCardStyle,
@@ -205,7 +206,19 @@ export default async function ScopePage({
               <span style={codeStyle}>{scope.id}</span>
             </span>
           </div>
-          <span style={tonePillStyle(scopeTone)}>{scope.status}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {scope.jiraDashboardUrl && (
+              <a
+                href={scope.jiraDashboardUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={linkStyle}
+              >
+                Jira dashboard ↗
+              </a>
+            )}
+            <span style={tonePillStyle(scopeTone)}>{scope.status}</span>
+          </div>
         </div>
 
         <div style={{ ...statGridStyle, gap: '0.6rem', marginTop: '0.9rem', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>

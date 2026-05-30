@@ -201,6 +201,7 @@ describe('POST /v1/admin/scopes', () => {
     expect(parsed.success, JSON.stringify(parsed.error)).toBe(true);
     expect(parsed.data?.boardId).toBe(1);
     expect(parsed.data?.connectionId).toBe(connectionId);
+    expect(parsed.data?.jiraDashboardUrl).toBe(`${JIRA_BASE}/secure/RapidBoard.jspa?rapidView=1`);
     expect(parsed.data?.includedIssueTypes).toEqual([{ id: 'it-1', name: 'Story' }]);
   });
 
@@ -275,6 +276,7 @@ describe('PUT /v1/admin/scopes/:id', () => {
     const parsed = FlowScopeSchema.safeParse(body);
     expect(parsed.success, JSON.stringify(parsed.error)).toBe(true);
     expect(parsed.data?.syncIntervalMinutes).toBe(15);
+    expect(parsed.data?.jiraDashboardUrl).toBe(`${JIRA_BASE}/secure/RapidBoard.jspa?rapidView=1`);
     expect(parsed.data?.includedIssueTypes).toEqual([{ id: 'it-1', name: 'Story' }]);
     const db = getPrismaClient();
     const syncRuns = await db.syncRun.findMany({ where: { scopeId } });

@@ -66,7 +66,7 @@ export async function buildScopeSummary(
   }
 
   return {
-    scope: mapScope(scope),
+    scope: mapScope(scope, connection ? { jiraBaseUrl: connection.baseUrl } : undefined),
     connectionHealth: (connection?.healthStatus ?? 'draft'),
     ...(lastSync != null ? { lastSync: mapSyncRun(lastSync) } : {}),
     ...(filterOptions !== undefined ? { filterOptions } : {}),

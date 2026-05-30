@@ -63,7 +63,11 @@ export default async function AdminJiraPage() {
   ]);
 
   const connectionSummaries = connections.map(mapConnection);
-  const scopeSummaries = scopes.map(mapScope);
+  const jiraBaseUrlByConnectionId = new Map(connections.map((connection) => [connection.id, connection.baseUrl]));
+  const scopeSummaries = scopes.map((scope) => {
+    const jiraBaseUrl = jiraBaseUrlByConnectionId.get(scope.connectionId);
+    return mapScope(scope, jiraBaseUrl ? { jiraBaseUrl } : undefined);
+  });
 
   const connectionTone = (status: string) => {
     if (status === 'healthy') return 'positive';
@@ -178,9 +182,21 @@ export default async function AdminJiraPage() {
                     Board {scope.boardId} · every {scope.syncIntervalMinutes} minutes
                   </p>
                 </div>
-                <a href={`/scopes/${scope.id}`} style={linkStyle}>
-                  View →
-                </a>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <a href={`/scopes/${scope.id}`} style={linkStyle}>
+                    View →
+                  </a>
+                  {scope.jiraDashboardUrl && (
+                    <a
+                      href={scope.jiraDashboardUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={linkStyle}
+                    >
+                      Jira dashboard ↗
+                    </a>
+                  )}
+                </div>
                 <div style={{ width: '100%' }}>
                   <FlowScopeForm
                     key={`scope-${scope.id}-${scope.connectionId}-${scope.boardId}-${scope.timezone}-${scope.syncIntervalMinutes}`}

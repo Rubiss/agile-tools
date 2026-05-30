@@ -82,7 +82,7 @@ async function handlePOST(req: NextRequest): Promise<Response> {
       throw err;
     }
 
-    return Response.json(mapScope(scope), { status: 201 });
+    return Response.json(mapScope(scope, { jiraBaseUrl: conn.baseUrl }), { status: 201 });
   } catch (err) {
     if (err instanceof ResponseError) return err.response;
     logger.error('Failed to create flow scope', {

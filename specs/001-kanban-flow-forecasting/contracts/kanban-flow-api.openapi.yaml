@@ -720,6 +720,9 @@ components:
           type: integer
         boardName:
           type: string
+        jiraDashboardUrl:
+          type: string
+          format: uri
         timezone:
           type: string
         includedIssueTypeIds:
