@@ -136,4 +136,33 @@ describe('GET /api/v1/scopes/:scopeId/throughput', () => {
     expect(body.sampleStartDate).toBe('2026-02-01');
     expect(body.sampleEndDate).toBe('2026-03-15');
   });
+
+  it('advances stale dataVersion pins to the latest retained projection', async () => {
+    vi.mocked(queryDailyThroughput).mockResolvedValue([
+      { day: '2026-04-20', completedStoryCount: 3, complete: true },
+    ] as never);
+
+    const response = await GET(
+      new NextRequest(
+        'http://localhost/api/v1/scopes/scope-1/throughput?dataVersion=old-sync&sampleMode=range&sampleStartDate=2026-02-01&sampleEndDate=2026-03-15',
+      ),
+      { params: Promise.resolve({ scopeId: 'scope-1' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(queryDailyThroughput).toHaveBeenCalledWith(
+      expect.anything(),
+      'scope-1',
+      'UTC',
+      expect.objectContaining({
+        dataVersion: 'sync-1',
+        sampleStartDate: '2026-02-01',
+        sampleEndDate: '2026-03-15',
+      }),
+    );
+
+    const body = await response.json();
+    expect(body.dataVersion).toBe('sync-1');
+    expect(body.sampleSize).toBe(3);
+  });
 });

@@ -41,6 +41,7 @@ const { requireWorkspaceContext } = await import('@/server/auth');
 const {
   getFlowScope,
   getLastSucceededSyncRun,
+  getSyncRunByDataVersion,
   queryDailyThroughput,
   computeForecastRequestHash,
   storeForecastCache,
@@ -235,6 +236,63 @@ describe('POST /api/v1/scopes/:scopeId/forecasts', () => {
     expect(body.sampleMode).toBe('range');
     expect(body.historicalWindowDays).toBeUndefined();
     expect(body.sampleStartDate).toBe('2026-02-01');
+  });
+
+  it('advances stale but valid dataVersion pins to the latest retained projection', async () => {
+    vi.mocked(getSyncRunByDataVersion).mockResolvedValue({
+      dataVersion: 'old-sync',
+      finishedAt: new Date('2026-04-20T00:00:00Z'),
+    } as never);
+    vi.mocked(queryDailyThroughput).mockResolvedValue([
+      { day: '2026-04-20', completedStoryCount: 3, complete: true },
+    ] as never);
+    vi.mocked(runWhenForecast).mockReturnValue({
+      warnings: [],
+      results: [{ confidenceLevel: 85, completionDate: '2026-05-01' }],
+    });
+
+    const response = await POST(
+      new NextRequest('http://localhost/api/v1/scopes/scope-1/forecasts', {
+        method: 'POST',
+        headers: {
+          Origin: 'http://localhost',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'when',
+          remainingStoryCount: 12,
+          sampleMode: 'range',
+          sampleStartDate: '2026-02-01',
+          sampleEndDate: '2026-03-15',
+          confidenceLevels: [85],
+          dataVersion: 'old-sync',
+        }),
+      }),
+      { params: Promise.resolve({ scopeId: 'scope-1' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(queryDailyThroughput).toHaveBeenCalledWith(
+      expect.anything(),
+      'scope-1',
+      'UTC',
+      expect.objectContaining({
+        dataVersion: 'sync-1',
+        sampleStartDate: '2026-02-01',
+        sampleEndDate: '2026-03-15',
+      }),
+    );
+    expect(storeForecastCache).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        dataVersion: 'sync-1',
+        sampleSize: 3,
+      }),
+    );
+
+    const body = await response.json();
+    expect(body.dataVersion).toBe('sync-1');
+    expect(body.sampleSize).toBe(3);
   });
 
   it('rejects impossible dates at the shared forecast request schema boundary', () => {

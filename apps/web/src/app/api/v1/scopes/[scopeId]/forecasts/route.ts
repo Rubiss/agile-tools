@@ -107,33 +107,41 @@ async function handlePOST(
       }
     }
 
-    // Resolve the effective data snapshot.
+    // Resolve the effective data snapshot. WorkItem projections retain only
+    // the latest sync's rows, so a stale but valid dataVersion pin must advance
+    // to the latest retained projection instead of sampling an empty snapshot.
     let effectiveDataVersion: string | undefined;
     let syncedAt: Date | undefined;
+    const lastSucceeded = await getLastSucceededSyncRun(db, ctx.workspaceId, scopeId);
 
     if (request.dataVersion) {
-      const syncRun = await getSyncRunByDataVersion(
-        db,
-        ctx.workspaceId,
-        scopeId,
-        request.dataVersion,
-      );
-      if (!syncRun?.dataVersion || !syncRun.finishedAt) {
-        metricResult = 'not_found';
-        return Response.json(
-          {
-            code: 'NOT_FOUND',
-            message: 'The requested dataVersion does not exist or has not yet succeeded.',
-          },
-          { status: 404 },
+      if (lastSucceeded?.dataVersion === request.dataVersion && lastSucceeded.finishedAt) {
+        effectiveDataVersion = lastSucceeded.dataVersion;
+        syncedAt = lastSucceeded.finishedAt;
+      } else {
+        const syncRun = await getSyncRunByDataVersion(
+          db,
+          ctx.workspaceId,
+          scopeId,
+          request.dataVersion,
         );
+        if (!syncRun?.dataVersion || !syncRun.finishedAt) {
+          metricResult = 'not_found';
+          return Response.json(
+            {
+              code: 'NOT_FOUND',
+              message: 'The requested dataVersion does not exist or has not yet succeeded.',
+            },
+            { status: 404 },
+          );
+        }
+
+        effectiveDataVersion = lastSucceeded?.dataVersion ?? syncRun.dataVersion;
+        syncedAt = lastSucceeded?.finishedAt ?? syncRun.finishedAt;
       }
-      effectiveDataVersion = syncRun.dataVersion;
-      syncedAt = syncRun.finishedAt;
     }
 
     if (!effectiveDataVersion) {
-      const lastSucceeded = await getLastSucceededSyncRun(db, ctx.workspaceId, scopeId);
       effectiveDataVersion = lastSucceeded?.dataVersion ?? undefined;
       syncedAt = lastSucceeded?.finishedAt ?? undefined;
     }
