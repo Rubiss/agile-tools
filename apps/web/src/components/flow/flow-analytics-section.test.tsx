@@ -8,7 +8,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FlowAnalyticsSection } from './flow-analytics-section';
 
 vi.mock('./aging-scatter-plot', () => ({
-  AgingScatterPlot: () => null,
+  AgingScatterPlot: () => <div>Global chart</div>,
+}));
+
+vi.mock('./column-aging-scatter-plot', () => ({
+  ColumnAgingScatterPlot: () => <div>Column chart</div>,
 }));
 
 vi.mock('./work-item-detail-drawer', () => ({
@@ -20,6 +24,7 @@ vi.mock('./aging-threshold-drawer', () => ({
 }));
 
 const STORAGE_PREFIX = 'agile-tools:flow-filters:v1:';
+const VIEW_STORAGE_PREFIX = 'agile-tools:flow-chart-view:v1:';
 const TEST_SCOPE_ID = '11111111-1111-4111-8111-111111111111';
 
 function emptyFlowResponse() {
@@ -244,6 +249,39 @@ describe('FlowAnalyticsSection', () => {
         expect(stored).not.toBeNull();
         const parsed = JSON.parse(stored as string);
         expect(parsed.agingOnly).toBe(true);
+      });
+    });
+
+    describe('chart view persistence', () => {
+      const filterOptions = {
+        historicalWindows: [30, 60, 90, 180],
+        issueTypes: [],
+        statuses: [],
+      };
+
+      it('persists the selected column-aging view under the scope-specific key', async () => {
+        const user = userEvent.setup();
+        const fetchMock = vi.fn().mockResolvedValue(emptyFlowResponse());
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
+
+        expect(await screen.findByText('Global chart')).toBeVisible();
+
+        await user.click(screen.getByRole('button', { name: /column aging/i }));
+
+        expect(await screen.findByText('Column chart')).toBeVisible();
+        expect(window.localStorage.getItem(`${VIEW_STORAGE_PREFIX}${TEST_SCOPE_ID}`)).toBe('column');
+      });
+
+      it('rehydrates the previously selected chart view', async () => {
+        window.localStorage.setItem(`${VIEW_STORAGE_PREFIX}${TEST_SCOPE_ID}`, 'column');
+        const fetchMock = vi.fn().mockResolvedValue(emptyFlowResponse());
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
+
+        expect(await screen.findByText('Column chart')).toBeVisible();
       });
     });
   });

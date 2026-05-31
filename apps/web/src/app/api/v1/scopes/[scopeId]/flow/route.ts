@@ -7,8 +7,18 @@ import {
   queryCurrentWorkItems,
   getLatestAgingThresholds,
   getLatestAgingThresholdModel,
+  getBoardColumnMappingsForDataVersion,
 } from '@agile-tools/db';
-import type { FlowAnalyticsResponse, AgingModel, FlowPoint, Warning } from '@agile-tools/shared/contracts/api';
+import {
+  ColumnAgingModelSchema,
+  type FlowAnalyticsResponse,
+  type AgingModel,
+  type AgingZone,
+  type ColumnAgingModel,
+  type ColumnDuration,
+  type FlowPoint,
+  type Warning,
+} from '@agile-tools/shared/contracts/api';
 import { requireWorkspaceContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { withHttpMetrics } from '@/server/route-metrics';
@@ -76,14 +86,16 @@ async function handleGET(
           sampleSize: 0,
           lowConfidenceReason: 'No completed stories in history.',
         } satisfies AgingModel,
+        columnAgingModels: [] satisfies ColumnAgingModel[],
         points: [] satisfies FlowPoint[],
       } satisfies FlowAnalyticsResponse);
     }
 
     // Load aging thresholds for work item zone classification, and the full model for the response.
-    const [agingThresholds, agingModelRow] = await Promise.all([
+    const [agingThresholds, agingModelRow, columnMappings] = await Promise.all([
       getLatestAgingThresholds(db, scopeId, { dataVersion: effectiveDataVersion }),
       getLatestAgingThresholdModel(db, scopeId, { dataVersion: effectiveDataVersion }),
+      getBoardColumnMappingsForDataVersion(db, scopeId, effectiveDataVersion),
     ]);
 
     // Query active work items for this scope.
@@ -91,6 +103,7 @@ async function handleGET(
       dataVersion: effectiveDataVersion,
       timezone: scope.timezone,
       ...(agingThresholds ? { agingThresholds } : {}),
+      ...(columnMappings.length > 0 ? { columnMappings } : {}),
     });
 
     // Apply optional filters.
@@ -136,6 +149,9 @@ async function handleGET(
       });
     }
 
+    const columnAgingModels = parseColumnAgingModels(agingModelRow?.columnThresholds);
+    const columnAgingModelByName = new Map(columnAgingModels.map((model) => [model.columnName, model]));
+
     const points: FlowPoint[] = filtered.map((item) => ({
       workItemId: item.workItemId,
       issueKey: item.issueKey,
@@ -145,6 +161,16 @@ async function handleGET(
       currentColumn: item.currentColumn,
       ...(item.assigneeName ? { assigneeName: item.assigneeName } : {}),
       ageDays: item.ageInDays,
+      ...(item.currentColumnAgeDays !== undefined ? { currentColumnAgeDays: item.currentColumnAgeDays } : {}),
+      ...(item.currentColumnAgeDays !== undefined
+        ? {
+            currentColumnAgingZone: classifyColumnAgingZone(
+              item.currentColumnAgeDays,
+              columnAgingModelByName.get(item.currentColumn),
+            ),
+          }
+        : {}),
+      ...(item.columnDurations ? { columnDurations: item.columnDurations.map(toColumnDurationResponse) } : {}),
       totalHoldHours: item.totalHoldHours,
       onHoldNow: item.onHoldNow,
       agingZone: item.agingZone,
@@ -161,6 +187,7 @@ async function handleGET(
       sampleSize: filtered.length,
       warnings,
       agingModel,
+      columnAgingModels,
       points,
     } satisfies FlowAnalyticsResponse);
   } catch (err) {
@@ -185,3 +212,38 @@ async function handleGET(
 }
 
 export const GET = withHttpMetrics('GET', '/api/v1/scopes/[scopeId]/flow', handleGET);
+
+function parseColumnAgingModels(value: unknown): ColumnAgingModel[] {
+  const parsed = ColumnAgingModelSchema.array().safeParse(value ?? []);
+  if (!parsed.success) return [];
+  return parsed.data;
+}
+
+function classifyColumnAgingZone(ageDays: number, model: ColumnAgingModel | undefined): AgingZone {
+  if (!model || (model.p85 <= 0 && model.p50 <= 0)) return 'normal';
+  if (ageDays > model.p85) return 'aging';
+  if (ageDays > model.p50) return 'watch';
+  return 'normal';
+}
+
+function toColumnDurationResponse(duration: {
+  columnName: string;
+  statusIds: string[];
+  workingDays: number;
+  holdWorkingDays: number;
+  visitCount: number;
+  current: boolean;
+  firstEnteredAt: Date | null;
+  lastEnteredAt: Date | null;
+}): ColumnDuration {
+  return {
+    columnName: duration.columnName,
+    statusIds: duration.statusIds,
+    workingDays: duration.workingDays,
+    holdWorkingDays: duration.holdWorkingDays,
+    visitCount: duration.visitCount,
+    current: duration.current,
+    ...(duration.firstEnteredAt ? { firstEnteredAt: duration.firstEnteredAt.toISOString() } : {}),
+    ...(duration.lastEnteredAt ? { lastEnteredAt: duration.lastEnteredAt.toISOString() } : {}),
+  };
+}

@@ -6,6 +6,7 @@ import { shapeFlowAnalytics } from '@/server/views/flow-analytics';
 import { FlowFiltersPanel } from './flow-filters';
 import type { FlowFilters, FilterOptions } from './flow-filters';
 import { AgingScatterPlot } from './aging-scatter-plot';
+import { ColumnAgingScatterPlot } from './column-aging-scatter-plot';
 import { AgingThresholdDrawer } from './aging-threshold-drawer';
 import { WorkItemDetailDrawer } from './work-item-detail-drawer';
 import { buttonStyle, codeStyle, insetPanelStyle, noticeStyle, palette, tonePillStyle } from '@/components/app/chrome';
@@ -26,9 +27,15 @@ const DEFAULT_FILTERS: FlowFilters = {
 };
 
 const FILTER_STORAGE_PREFIX = 'agile-tools:flow-filters:v1:';
+const VIEW_STORAGE_PREFIX = 'agile-tools:flow-chart-view:v1:';
+type FlowChartView = 'global' | 'column';
 
 function storageKey(scopeId: string): string {
   return `${FILTER_STORAGE_PREFIX}${scopeId}`;
+}
+
+function viewStorageKey(scopeId: string): string {
+  return `${VIEW_STORAGE_PREFIX}${scopeId}`;
 }
 
 /**
@@ -127,12 +134,32 @@ function saveStoredFilters(scopeId: string, filters: FlowFilters): void {
   }
 }
 
+function loadStoredView(scopeId: string): FlowChartView {
+  if (typeof window === 'undefined') return 'global';
+  try {
+    const value = window.localStorage.getItem(viewStorageKey(scopeId));
+    return value === 'column' ? 'column' : 'global';
+  } catch {
+    return 'global';
+  }
+}
+
+function saveStoredView(scopeId: string, view: FlowChartView): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(viewStorageKey(scopeId), view);
+  } catch {
+    // Quota/disabled storage — non-fatal.
+  }
+}
+
 export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAnalyticsSectionProps) {
   const [filters, setFilters] = useState<FlowFilters>({
     ...DEFAULT_FILTERS,
     historicalWindowDays: filterOptions.historicalWindows?.[2] ?? 90,
   });
   const [response, setResponse] = useState<FlowAnalyticsResponse | null>(null);
+  const [chartView, setChartView] = useState<FlowChartView>('global');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -178,6 +205,7 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
   );
 
   useEffect(() => {
+    setChartView(loadStoredView(scopeId));
     const stored = loadStoredFilters(scopeId, filterOptions);
     if (stored) {
       setFilters(stored);
@@ -196,6 +224,11 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
     // changed" and should not re-fire if a parent re-renders with a new options
     // object reference. fetchFlow already closes over scopeId.
   }, [scopeId]);
+
+  function handleChartViewChange(next: FlowChartView) {
+    setChartView(next);
+    saveStoredView(scopeId, next);
+  }
 
   function handleFilterChange(next: FlowFilters) {
     setFilters(next);
@@ -253,10 +286,42 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
           <p style={{ color: palette.danger, fontSize: '0.875rem', margin: 0 }}>{error}</p>
         )}
         {viewModel && !error && (
-          <AgingScatterPlot
-            viewModel={viewModel}
-            onItemSelect={handleItemSelect}
-          />
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }} aria-label="Flow analytics chart view">
+                <button
+                  type="button"
+                  onClick={() => handleChartViewChange('global')}
+                  style={buttonStyle(chartView === 'global' ? 'primary' : 'secondary')}
+                >
+                  Global aging
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleChartViewChange('column')}
+                  style={buttonStyle(chartView === 'column' ? 'primary' : 'secondary')}
+                >
+                  Column aging
+                </button>
+              </div>
+              <span style={{ color: palette.soft, fontSize: '0.8rem', alignSelf: 'center' }}>
+                {chartView === 'column'
+                  ? 'Current-column dwell with per-column thresholds.'
+                  : 'Whole-flow age with global thresholds.'}
+              </span>
+            </div>
+            {chartView === 'column' ? (
+              <ColumnAgingScatterPlot
+                viewModel={viewModel}
+                onItemSelect={handleItemSelect}
+              />
+            ) : (
+              <AgingScatterPlot
+                viewModel={viewModel}
+                onItemSelect={handleItemSelect}
+              />
+            )}
+          </>
         )}
         {!viewModel && !loading && !error && (
           <p style={{ color: palette.soft, fontSize: '0.875rem' }}>No data available.</p>
@@ -318,6 +383,11 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
           {response.agingModel.lowConfidenceReason && (
             <span style={{ color: palette.warning }}>
               ⚠ {response.agingModel.lowConfidenceReason}
+            </span>
+          )}
+          {response.columnAgingModels?.some((model) => model.lowConfidenceReason) && (
+            <span style={{ color: palette.warning }}>
+              ⚠ Some column thresholds have low-confidence samples.
             </span>
           )}
           <button

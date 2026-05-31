@@ -16,6 +16,7 @@
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
+    "@agile-tools/analytics": "workspace:*",
     "@agile-tools/shared": "workspace:*",
     "@prisma/client": "^6.19.0",
     "zod": "^4.3.6"

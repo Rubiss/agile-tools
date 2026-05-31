@@ -88,6 +88,11 @@ describe('AgingScatterPlot', () => {
         { id: 'watch', data: [] },
         { id: 'aging', data: [] },
       ],
+      columnSeries: [
+        { id: 'normal', data: [] },
+        { id: 'watch', data: [] },
+        { id: 'aging', data: [] },
+      ],
       agingModel: {
         metricBasis: 'cycle_time',
         p50: 10,
@@ -95,6 +100,8 @@ describe('AgingScatterPlot', () => {
         p85: 20,
         sampleSize: 25,
       },
+      columnAgingModels: [],
+      columnNames: [],
       sampleSize: 1,
       dataVersion: 'sync-1',
       syncedAt: new Date('2026-05-30T12:00:00Z').toISOString(),

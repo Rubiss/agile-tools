@@ -1,11 +1,14 @@
 import { type NextRequest } from 'next/server';
+import { buildColumnDurationsForItem } from '@agile-tools/analytics';
 import { differenceInWorkingDays, logger } from '@agile-tools/shared';
 import {
   getPrismaClient,
   getFlowScope,
   getWorkItemWithDetail,
+  getBoardColumnMappingsForDataVersion,
 } from '@agile-tools/db';
 import type {
+  ColumnDuration,
   WorkItemDetail,
   HoldPeriodResponse,
   LifecycleEventResponse,
@@ -44,6 +47,26 @@ async function handleGET(
     const referenceDate = item.startedAt ?? item.createdAt;
     const endDate = item.completedAt ?? now;
     const ageDays = differenceInWorkingDays(referenceDate, endDate, scope.timezone);
+    const columnMappings = item.lastSyncRunId
+      ? await getBoardColumnMappingsForDataVersion(db, scopeId, item.lastSyncRunId)
+      : [];
+    const { columnDurations } = buildColumnDurationsForItem({
+      createdAt: item.createdAt,
+      startedAt: item.startedAt,
+      completedAt: item.completedAt,
+      currentStatusId: item.currentStatusId,
+      statusChanges: item.lifecycleEvents
+        .filter((event) => event.eventType === 'status_change')
+        .map((event) => ({
+          fromStatusId: event.fromStatusId,
+          toStatusId: event.toStatusId,
+          changedAt: event.changedAt,
+        })),
+      holdIntervals: item.holdPeriods,
+      columns: columnMappings,
+      now,
+      timezone: scope.timezone,
+    });
 
     const holdPeriods: HoldPeriodResponse[] = item.holdPeriods.map((hp) => ({
       startedAt: hp.startedAt.toISOString(),
@@ -69,6 +92,7 @@ async function handleGET(
       jiraUrl: item.directUrl,
       ...(item.startedAt ? { startedAt: item.startedAt.toISOString() } : {}),
       ...(item.completedAt ? { completedAt: item.completedAt.toISOString() } : {}),
+      columnDurations: columnDurations.map(toColumnDurationResponse),
       holdPeriods,
       lifecycleEvents,
       warnings: [],
@@ -86,3 +110,25 @@ async function handleGET(
 }
 
 export const GET = withHttpMetrics('GET', '/api/v1/scopes/[scopeId]/items/[workItemId]', handleGET);
+
+function toColumnDurationResponse(duration: {
+  columnName: string;
+  statusIds: string[];
+  workingDays: number;
+  holdWorkingDays: number;
+  visitCount: number;
+  current: boolean;
+  firstEnteredAt: Date | null;
+  lastEnteredAt: Date | null;
+}): ColumnDuration {
+  return {
+    columnName: duration.columnName,
+    statusIds: duration.statusIds,
+    workingDays: duration.workingDays,
+    holdWorkingDays: duration.holdWorkingDays,
+    visitCount: duration.visitCount,
+    current: duration.current,
+    ...(duration.firstEnteredAt ? { firstEnteredAt: duration.firstEnteredAt.toISOString() } : {}),
+    ...(duration.lastEnteredAt ? { lastEnteredAt: duration.lastEnteredAt.toISOString() } : {}),
+  };
+}

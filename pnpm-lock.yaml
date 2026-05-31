@@ -180,6 +180,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@agile-tools/analytics':
+        specifier: workspace:*
+        version: link:../analytics
       '@agile-tools/shared':
         specifier: workspace:*
         version: link:../shared

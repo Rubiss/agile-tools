@@ -203,6 +203,30 @@ export const AgingModelSchema = z.object({
 });
 export type AgingModel = z.infer<typeof AgingModelSchema>;
 
+export const ColumnAgingModelSchema = z.object({
+  columnName: z.string(),
+  statusIds: z.array(z.string()),
+  metricBasis: z.literal('column_working_days'),
+  p50: z.number(),
+  p70: z.number(),
+  p85: z.number(),
+  sampleSize: z.number().int(),
+  lowConfidenceReason: z.string().optional(),
+});
+export type ColumnAgingModel = z.infer<typeof ColumnAgingModelSchema>;
+
+export const ColumnDurationSchema = z.object({
+  columnName: z.string(),
+  statusIds: z.array(z.string()),
+  workingDays: z.number(),
+  holdWorkingDays: z.number(),
+  visitCount: z.number().int(),
+  current: z.boolean(),
+  firstEnteredAt: z.string().datetime().optional(),
+  lastEnteredAt: z.string().datetime().optional(),
+});
+export type ColumnDuration = z.infer<typeof ColumnDurationSchema>;
+
 export const FlowPointSchema = z.object({
   workItemId: z.string().uuid(),
   issueKey: z.string(),
@@ -212,6 +236,9 @@ export const FlowPointSchema = z.object({
   currentColumn: z.string().optional(),
   assigneeName: z.string().optional(),
   ageDays: z.number(),
+  currentColumnAgeDays: z.number().optional(),
+  currentColumnAgingZone: AgingZoneSchema.optional(),
+  columnDurations: z.array(ColumnDurationSchema).optional(),
   totalHoldHours: z.number().optional(),
   onHoldNow: z.boolean(),
   holdReason: z.string().optional(),
@@ -228,6 +255,7 @@ export const FlowAnalyticsResponseSchema = z.object({
   sampleSize: z.number().int(),
   warnings: z.array(WarningSchema),
   agingModel: AgingModelSchema,
+  columnAgingModels: z.array(ColumnAgingModelSchema).optional(),
   points: z.array(FlowPointSchema),
 });
 export type FlowAnalyticsResponse = z.infer<typeof FlowAnalyticsResponseSchema>;
@@ -260,6 +288,7 @@ export const WorkItemDetailSchema = z.object({
   jiraUrl: z.string().url(),
   startedAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
+  columnDurations: z.array(ColumnDurationSchema).optional(),
   holdPeriods: z.array(HoldPeriodResponseSchema),
   lifecycleEvents: z.array(LifecycleEventResponseSchema),
   warnings: z.array(WarningSchema),

@@ -167,6 +167,39 @@ function WorkItemDetailContent({ detail }: { detail: WorkItemDetail }) {
         </p>
       )}
 
+      {detail.columnDurations && detail.columnDurations.length > 0 && (
+        <div style={{ marginTop: '1rem' }}>
+          <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: palette.text }}>
+            Column Durations
+          </h4>
+          <div style={{ display: 'grid', gap: '0.45rem' }}>
+            {detail.columnDurations.map((duration) => (
+              <div
+                key={duration.columnName}
+                style={{
+                  padding: '0.6rem 0.7rem',
+                  borderRadius: '12px',
+                  border: `1px solid ${palette.line}`,
+                  background: palette.panel,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+                  <strong style={{ color: palette.ink }}>{duration.columnName}</strong>
+                  <span style={{ color: duration.current ? palette.chartWarning : palette.text }}>
+                    {duration.workingDays.toFixed(1)}d
+                  </span>
+                </div>
+                <div style={{ marginTop: '0.25rem', color: palette.soft, fontSize: '0.75rem' }}>
+                  {duration.visitCount} visit{duration.visitCount === 1 ? '' : 's'}
+                  {duration.holdWorkingDays > 0 && ` · ${duration.holdWorkingDays.toFixed(1)}d on hold`}
+                  {duration.current && ' · current'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {detail.holdPeriods.length > 0 && (
         <div style={{ marginTop: '1rem' }}>
           <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: palette.text }}>

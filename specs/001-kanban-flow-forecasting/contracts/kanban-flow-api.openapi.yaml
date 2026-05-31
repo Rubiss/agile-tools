@@ -858,6 +858,10 @@ components:
             $ref: '#/components/schemas/Warning'
         agingModel:
           $ref: '#/components/schemas/AgingModel'
+        columnAgingModels:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnAgingModel'
         points:
           type: array
           items:
@@ -879,6 +883,53 @@ components:
           type: integer
         lowConfidenceReason:
           type: string
+    ColumnAgingModel:
+      type: object
+      required: [columnName, statusIds, metricBasis, p50, p70, p85, sampleSize]
+      properties:
+        columnName:
+          type: string
+        statusIds:
+          type: array
+          items:
+            type: string
+        metricBasis:
+          type: string
+          enum: [column_working_days]
+        p50:
+          type: number
+        p70:
+          type: number
+        p85:
+          type: number
+        sampleSize:
+          type: integer
+        lowConfidenceReason:
+          type: string
+    ColumnDuration:
+      type: object
+      required: [columnName, statusIds, workingDays, holdWorkingDays, visitCount, current]
+      properties:
+        columnName:
+          type: string
+        statusIds:
+          type: array
+          items:
+            type: string
+        workingDays:
+          type: number
+        holdWorkingDays:
+          type: number
+        visitCount:
+          type: integer
+        current:
+          type: boolean
+        firstEnteredAt:
+          type: string
+          format: date-time
+        lastEnteredAt:
+          type: string
+          format: date-time
     FlowPoint:
       type: object
       required: [workItemId, issueKey, summary, currentStatus, ageDays, onHoldNow, agingZone]
@@ -900,6 +951,15 @@ components:
           type: string
         ageDays:
           type: number
+        currentColumnAgeDays:
+          type: number
+        currentColumnAgingZone:
+          type: string
+          enum: [normal, watch, aging]
+        columnDurations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnDuration'
         totalHoldHours:
           type: number
         onHoldNow:
@@ -938,6 +998,10 @@ components:
         completedAt:
           type: string
           format: date-time
+        columnDurations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnDuration'
         holdPeriods:
           type: array
           items:

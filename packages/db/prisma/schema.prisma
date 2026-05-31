@@ -278,6 +278,7 @@ model AgingThresholdModel {
   p50                  Float
   p70                  Float
   p85                  Float
+  columnThresholds     Json?
   calculatedAt         DateTime
   dataVersion          String
   lowConfidenceReason  String?

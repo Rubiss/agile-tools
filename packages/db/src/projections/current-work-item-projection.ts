@@ -1,4 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
+import {
+  buildColumnDurationsForItem,
+  type BoardColumnMapping,
+  type ColumnDurationResult,
+} from '@agile-tools/analytics';
 import { differenceInWorkingDays } from '@agile-tools/shared';
 
 /**
@@ -27,6 +32,10 @@ export interface CurrentWorkItemRow {
   assigneeName: string | null;
   /** Working age in fractional days from startedAt (or createdAt if not yet started). */
   ageInDays: number;
+  /** Working days spent in the current contiguous board-column visit. */
+  currentColumnAgeDays?: number;
+  /** Per-column working-day durations, summed across repeated visits. */
+  columnDurations?: ColumnDurationResult[];
   startedAt: Date | null;
   /** Total hold duration in hours derived from HoldPeriod records. */
   totalHoldHours: number;
@@ -69,9 +78,15 @@ const MS_PER_HOUR = 1000 * 60 * 60;
 export async function queryCurrentWorkItems(
   db: PrismaClient,
   scopeId: string,
-  options?: { dataVersion?: string; agingThresholds?: AgingThresholds; timezone?: string },
+  options?: {
+    dataVersion?: string;
+    agingThresholds?: AgingThresholds;
+    timezone?: string;
+    columnMappings?: BoardColumnMapping[];
+    now?: Date;
+  },
 ): Promise<CurrentWorkItemRow[]> {
-  const now = new Date();
+  const now = options?.now ?? new Date();
   const timezone = options?.timezone ?? 'UTC';
 
   const items = await db.workItem.findMany({
@@ -99,6 +114,15 @@ export async function queryCurrentWorkItems(
       holdPeriods: {
         select: { startedAt: true, endedAt: true },
       },
+      lifecycleEvents: {
+        where: { eventType: 'status_change' },
+        select: {
+          fromStatusId: true,
+          toStatusId: true,
+          changedAt: true,
+        },
+        orderBy: { changedAt: 'asc' },
+      },
     },
     orderBy: { startedAt: 'asc' },
   });
@@ -120,6 +144,20 @@ export async function queryCurrentWorkItems(
 
     const totalHoldHours = totalHoldMs / MS_PER_HOUR;
 
+    const columnDurationResult = options?.columnMappings
+      ? buildColumnDurationsForItem({
+          createdAt: item.createdAt,
+          startedAt: item.startedAt,
+          completedAt: null,
+          currentStatusId: item.currentStatusId,
+          statusChanges: item.lifecycleEvents,
+          holdIntervals: item.holdPeriods,
+          columns: options.columnMappings,
+          now,
+          timezone,
+        })
+      : null;
+
     return {
       workItemId: item.id,
       scopeId: item.scopeId,
@@ -132,6 +170,10 @@ export async function queryCurrentWorkItems(
       currentColumn: item.currentColumn ?? item.currentStatusName ?? item.currentStatusId,
       assigneeName: item.assigneeName,
       ageInDays,
+      ...(columnDurationResult?.currentColumnDwell
+        ? { currentColumnAgeDays: columnDurationResult.currentColumnDwell.workingDays }
+        : {}),
+      ...(columnDurationResult ? { columnDurations: columnDurationResult.columnDurations } : {}),
       startedAt: item.startedAt,
       totalHoldHours,
       onHoldNow,
@@ -237,6 +279,7 @@ export async function getLatestAgingThresholdModel(
   sampleSize: number;
   metricBasis: string;
   lowConfidenceReason: string | null;
+  columnThresholds: unknown;
 } | null> {
   const model = await db.agingThresholdModel.findFirst({
     where: {
@@ -253,7 +296,22 @@ export async function getLatestAgingThresholdModel(
     sampleSize: model.sampleSize,
     metricBasis: model.metricBasis,
     lowConfidenceReason: model.lowConfidenceReason,
+    columnThresholds: model.columnThresholds,
   };
+}
+
+export async function getBoardColumnMappingsForDataVersion(
+  db: PrismaClient,
+  scopeId: string,
+  dataVersion: string,
+): Promise<BoardColumnMapping[]> {
+  const snapshot = await db.boardSnapshot.findFirst({
+    where: { scopeId, syncRunId: dataVersion },
+    orderBy: { fetchedAt: 'desc' },
+    select: { columns: true },
+  });
+
+  return parseBoardColumnMappings(snapshot?.columns);
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -275,4 +333,19 @@ function classifyAgingZone(
   if (ageDays > thresholds.p85) return 'aging';
   if (ageDays > thresholds.p50) return 'watch';
   return 'normal';
+}
+
+function parseBoardColumnMappings(value: unknown): BoardColumnMapping[] {
+  if (!Array.isArray(value)) return [];
+  const columns: BoardColumnMapping[] = [];
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const candidate = entry as { name?: unknown; statusIds?: unknown };
+    if (typeof candidate.name !== 'string' || !Array.isArray(candidate.statusIds)) continue;
+    const statusIds = candidate.statusIds.filter((statusId): statusId is string => typeof statusId === 'string');
+    columns.push({ name: candidate.name, statusIds });
+  }
+
+  return columns;
 }
