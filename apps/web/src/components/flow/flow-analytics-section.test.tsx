@@ -7,8 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FlowAnalyticsSection } from './flow-analytics-section';
 
-const { agingThresholdDrawerMock } = vi.hoisted(() => ({
+const { agingThresholdDrawerMock, columnAgingScatterPlotMock } = vi.hoisted(() => ({
   agingThresholdDrawerMock: vi.fn(() => null),
+  columnAgingScatterPlotMock: vi.fn((props: { hideEmptyColumns?: boolean }) => props),
 }));
 
 vi.mock('./aging-scatter-plot', () => ({
@@ -16,7 +17,10 @@ vi.mock('./aging-scatter-plot', () => ({
 }));
 
 vi.mock('./column-aging-scatter-plot', () => ({
-  ColumnAgingScatterPlot: () => <div>Column chart</div>,
+  ColumnAgingScatterPlot: (props: { hideEmptyColumns?: boolean }) => {
+    columnAgingScatterPlotMock(props);
+    return <div>Column chart</div>;
+  },
 }));
 
 vi.mock('./work-item-detail-drawer', () => ({
@@ -29,6 +33,7 @@ vi.mock('./aging-threshold-drawer', () => ({
 
 const STORAGE_PREFIX = 'agile-tools:flow-filters:v1:';
 const VIEW_STORAGE_PREFIX = 'agile-tools:flow-chart-view:v1:';
+const HIDE_EMPTY_COLUMNS_STORAGE_PREFIX = 'agile-tools:flow-hide-empty-columns:v1:';
 const TEST_SCOPE_ID = '11111111-1111-4111-8111-111111111111';
 
 function emptyFlowResponse() {
@@ -75,6 +80,15 @@ function columnFlowResponse() {
         p70: 3,
         p85: 5,
         sampleSize: 40,
+      },
+      {
+        columnName: 'Ready for Review',
+        statusIds: ['review'],
+        metricBasis: 'column_working_days',
+        p50: 3,
+        p70: 5,
+        p85: 7,
+        sampleSize: 10,
       },
       {
         columnName: 'In Progress',
@@ -127,6 +141,7 @@ function jsonResponse(body: unknown): Response {
 
 afterEach(() => {
   agingThresholdDrawerMock.mockClear();
+  columnAgingScatterPlotMock.mockClear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   try {
@@ -369,6 +384,7 @@ describe('FlowAnalyticsSection', () => {
 
         expect(await screen.findByText('Column chart')).toBeVisible();
         expect(screen.getByText(/^Column thresholds:/i)).toBeInTheDocument();
+        expect(screen.getByText(/3 board columns/i)).toBeInTheDocument();
         expect(screen.getByText(/p50 \/ p70 \/ p85 are calculated per column/i)).toBeInTheDocument();
         expect(agingThresholdDrawerMock).toHaveBeenLastCalledWith(
           expect.objectContaining({
@@ -377,9 +393,55 @@ describe('FlowAnalyticsSection', () => {
               expect.objectContaining({ columnName: 'Selected for Development' }),
               expect.objectContaining({ columnName: 'In Progress' }),
             ]),
+            visibleColumnNames: ['Selected for Development', 'Ready for Review', 'In Progress'],
+          }),
+          undefined,
+        );
+      });
+
+      it('persists the hide-empty-column option under the scope-specific key', async () => {
+        const user = userEvent.setup();
+        const fetchMock = vi.fn().mockResolvedValue(columnFlowResponse());
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
+
+        await screen.findByText('Global chart');
+
+        await user.click(screen.getByRole('button', { name: /column aging/i }));
+
+        const toggle = await screen.findByLabelText(/hide empty columns/i);
+        expect(toggle).not.toBeChecked();
+        expect(columnAgingScatterPlotMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ hideEmptyColumns: false }),
+        );
+
+        await user.click(toggle);
+
+        expect(window.localStorage.getItem(`${HIDE_EMPTY_COLUMNS_STORAGE_PREFIX}${TEST_SCOPE_ID}`)).toBe('true');
+        expect(columnAgingScatterPlotMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ hideEmptyColumns: true }),
+        );
+        expect(agingThresholdDrawerMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({
             visibleColumnNames: ['Selected for Development', 'In Progress'],
           }),
           undefined,
+        );
+      });
+
+      it('rehydrates the hide-empty-column option', async () => {
+        window.localStorage.setItem(`${VIEW_STORAGE_PREFIX}${TEST_SCOPE_ID}`, 'column');
+        window.localStorage.setItem(`${HIDE_EMPTY_COLUMNS_STORAGE_PREFIX}${TEST_SCOPE_ID}`, 'true');
+        const fetchMock = vi.fn().mockResolvedValue(columnFlowResponse());
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
+
+        expect(await screen.findByText('Column chart')).toBeVisible();
+        expect(screen.getByLabelText(/hide empty columns/i)).toBeChecked();
+        expect(columnAgingScatterPlotMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ hideEmptyColumns: true }),
         );
       });
     });

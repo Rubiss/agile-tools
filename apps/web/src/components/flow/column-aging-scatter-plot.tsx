@@ -12,18 +12,20 @@ const zoneColors: Record<ColumnScatterDatum['agingZone'], string> = {
 interface ColumnAgingScatterPlotProps {
   viewModel: FlowAnalyticsViewModel;
   onItemSelect?: (workItemId: string, issueKey: string) => void;
+  hideEmptyColumns?: boolean;
   height?: number;
 }
 
 export function ColumnAgingScatterPlot({
   viewModel,
   onItemSelect,
+  hideEmptyColumns = false,
   height = 360,
 }: ColumnAgingScatterPlotProps) {
   const points = viewModel.columnSeries.flatMap((serie) => serie.data);
-  const columns = buildVisibleColumns(viewModel, points);
+  const columns = buildVisibleColumns(viewModel, points, hideEmptyColumns);
 
-  if (points.length === 0 || columns.length === 0) {
+  if (columns.length === 0) {
     return (
       <div
         style={{
@@ -46,20 +48,18 @@ export function ColumnAgingScatterPlot({
   const margin = { top: 26, right: 28, bottom: 70, left: 58 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
-  const columnStep = columns.length > 1 ? plotWidth / (columns.length - 1) : 0;
+  const slotWidth = plotWidth / columns.length;
   const thresholdModels = viewModel.columnAgingModels.filter((model) => columns.includes(model.columnName));
   const thresholds = thresholdModels.flatMap((model) => [model.p50, model.p85]);
   const maxY = Math.max(1, ...points.map((point) => point.y), ...thresholds);
   const yMax = Math.ceil(maxY * 1.15);
   const yTicks = buildTicks(yMax);
-  const maxPointOffset = columns.length > 1
-    ? Math.max(0, Math.min(34, (columnStep / 2) - 8))
-    : Math.max(0, Math.min(44, (plotWidth / 2) - 8));
+  const maxPointOffset = Math.max(0, Math.min(34, (slotWidth / 2) - 8));
   const pointLayouts = layoutColumnPoints(viewModel, columns, yForDays, maxPointOffset);
   const columnIndexByName = new Map(columns.map((column, index) => [column, index]));
 
   function xForColumn(index: number): number {
-    return margin.left + (columns.length === 1 ? plotWidth / 2 : index * columnStep);
+    return margin.left + slotWidth * (index + 0.5);
   }
 
   function yForDays(days: number): number {
@@ -103,15 +103,31 @@ export function ColumnAgingScatterPlot({
         {columns.map((column, index) => {
           const x = xForColumn(index);
           const model = viewModel.columnAgingModels.find((candidate) => candidate.columnName === column);
-          const halfBand = columns.length > 1 ? Math.min(columnStep * 0.35, 46) : 56;
+          const halfBand = Math.min(slotWidth * 0.35, 46);
           return (
             <g key={column}>
               <line x1={x} x2={x} y1={margin.top} y2={margin.top + plotHeight} stroke={palette.line} opacity={0.35} />
               {model && model.p50 > 0 && (
-                <ThresholdSegment x={x} y={yForDays(model.p50)} halfWidth={halfBand} color={palette.chartPositive} label="p50" />
+                <ThresholdSegment
+                  x={x}
+                  y={yForDays(model.p50)}
+                  halfWidth={halfBand}
+                  minX={margin.left}
+                  maxX={width - margin.right}
+                  color={palette.chartPositive}
+                  label="p50"
+                />
               )}
               {model && model.p85 > 0 && (
-                <ThresholdSegment x={x} y={yForDays(model.p85)} halfWidth={halfBand} color={palette.chartDanger} label="p85" />
+                <ThresholdSegment
+                  x={x}
+                  y={yForDays(model.p85)}
+                  halfWidth={halfBand}
+                  minX={margin.left}
+                  maxX={width - margin.right}
+                  color={palette.chartDanger}
+                  label="p85"
+                />
               )}
               <text
                 x={x}
@@ -184,9 +200,12 @@ export function ColumnAgingScatterPlot({
 function buildVisibleColumns(
   viewModel: FlowAnalyticsViewModel,
   points: ColumnScatterDatum[],
+  hideEmptyColumns: boolean,
 ): string[] {
   const activeColumns = new Set(points.map((point) => point.currentColumn));
-  const orderedColumns = viewModel.columnNames.filter((column) => activeColumns.has(column));
+  const orderedColumns = hideEmptyColumns
+    ? viewModel.columnNames.filter((column) => activeColumns.has(column))
+    : [...viewModel.columnNames];
   const orderedSet = new Set(orderedColumns);
   for (const point of points) {
     if (!orderedSet.has(point.currentColumn)) {
@@ -201,20 +220,32 @@ function ThresholdSegment({
   x,
   y,
   halfWidth,
+  minX,
+  maxX,
   color,
   label,
 }: {
   x: number;
   y: number;
   halfWidth: number;
+  minX: number;
+  maxX: number;
   color: string;
   label: string;
 }) {
+  const x1 = clamp(x - halfWidth, minX, maxX);
+  const x2 = clamp(x + halfWidth, minX, maxX);
+  const labelPadding = 4;
+  const labelOnRight = x2 + 26 <= maxX;
+  const labelX = labelOnRight ? x2 + labelPadding : Math.max(minX, x1 - labelPadding);
+  const labelAnchor = labelOnRight ? 'start' : 'end';
+
   return (
     <g>
       <line
-        x1={x - halfWidth}
-        x2={x + halfWidth}
+        data-testid="column-threshold-segment"
+        x1={x1}
+        x2={x2}
         y1={y}
         y2={y}
         stroke={color}
@@ -222,7 +253,7 @@ function ThresholdSegment({
         strokeDasharray="4 3"
         opacity={0.85}
       />
-      <text x={x + halfWidth + 4} y={y + 3} fill={color} fontSize={10}>
+      <text data-testid="column-threshold-label" x={labelX} y={y + 3} textAnchor={labelAnchor} fill={color} fontSize={10}>
         {label}
       </text>
     </g>
@@ -307,4 +338,8 @@ function pointLayoutKey(zone: ColumnScatterDatum['agingZone'], point: ColumnScat
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

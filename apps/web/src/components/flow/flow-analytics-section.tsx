@@ -28,6 +28,7 @@ const DEFAULT_FILTERS: FlowFilters = {
 
 const FILTER_STORAGE_PREFIX = 'agile-tools:flow-filters:v1:';
 const VIEW_STORAGE_PREFIX = 'agile-tools:flow-chart-view:v1:';
+const HIDE_EMPTY_COLUMNS_STORAGE_PREFIX = 'agile-tools:flow-hide-empty-columns:v1:';
 type FlowChartView = 'global' | 'column';
 
 function storageKey(scopeId: string): string {
@@ -36,6 +37,10 @@ function storageKey(scopeId: string): string {
 
 function viewStorageKey(scopeId: string): string {
   return `${VIEW_STORAGE_PREFIX}${scopeId}`;
+}
+
+function hideEmptyColumnsStorageKey(scopeId: string): string {
+  return `${HIDE_EMPTY_COLUMNS_STORAGE_PREFIX}${scopeId}`;
 }
 
 /**
@@ -153,6 +158,24 @@ function saveStoredView(scopeId: string, view: FlowChartView): void {
   }
 }
 
+function loadStoredHideEmptyColumns(scopeId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(hideEmptyColumnsStorageKey(scopeId)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveStoredHideEmptyColumns(scopeId: string, hideEmptyColumns: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(hideEmptyColumnsStorageKey(scopeId), String(hideEmptyColumns));
+  } catch {
+    // Quota/disabled storage — non-fatal.
+  }
+}
+
 export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAnalyticsSectionProps) {
   const [filters, setFilters] = useState<FlowFilters>({
     ...DEFAULT_FILTERS,
@@ -160,6 +183,7 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
   });
   const [response, setResponse] = useState<FlowAnalyticsResponse | null>(null);
   const [chartView, setChartView] = useState<FlowChartView>('global');
+  const [hideEmptyColumns, setHideEmptyColumns] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -206,6 +230,7 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
 
   useEffect(() => {
     setChartView(loadStoredView(scopeId));
+    setHideEmptyColumns(loadStoredHideEmptyColumns(scopeId));
     const stored = loadStoredFilters(scopeId, filterOptions);
     if (stored) {
       setFilters(stored);
@@ -230,6 +255,11 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
     saveStoredView(scopeId, next);
   }
 
+  function handleHideEmptyColumnsChange(next: boolean) {
+    setHideEmptyColumns(next);
+    saveStoredHideEmptyColumns(scopeId, next);
+  }
+
   function handleFilterChange(next: FlowFilters) {
     setFilters(next);
     saveStoredFilters(scopeId, next);
@@ -242,6 +272,8 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
   }
 
   const viewModel = response ? shapeFlowAnalytics(response) : null;
+  const visibleColumnNames = viewModel ? getVisibleColumnNames(viewModel, hideEmptyColumns) : [];
+  const activeColumnNames = viewModel ? getActiveColumnNames(viewModel) : [];
 
   return (
     <div>
@@ -288,7 +320,7 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
         {viewModel && !error && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }} aria-label="Flow analytics chart view">
+              <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', alignItems: 'center' }} aria-label="Flow analytics chart view">
                 <button
                   type="button"
                   onClick={() => handleChartViewChange('global')}
@@ -303,6 +335,30 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
                 >
                   Column aging
                 </button>
+                {chartView === 'column' && (
+                  <label
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      border: `1px solid ${hideEmptyColumns ? palette.accent : palette.lineStrong}`,
+                      borderRadius: '999px',
+                      padding: '0.45rem 0.65rem',
+                      color: hideEmptyColumns ? palette.ink : palette.muted,
+                      background: hideEmptyColumns ? 'rgba(84, 168, 255, 0.12)' : palette.panel,
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={hideEmptyColumns}
+                      onChange={(event) => handleHideEmptyColumnsChange(event.target.checked)}
+                      style={{ accentColor: palette.accent }}
+                    />
+                    Hide empty columns
+                  </label>
+                )}
               </div>
               <span style={{ color: palette.soft, fontSize: '0.8rem', alignSelf: 'center' }}>
                 {chartView === 'column'
@@ -314,6 +370,7 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
               <ColumnAgingScatterPlot
                 viewModel={viewModel}
                 onItemSelect={handleItemSelect}
+                hideEmptyColumns={hideEmptyColumns}
               />
             ) : (
               <AgingScatterPlot
@@ -369,9 +426,11 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
         >
           {chartView === 'column' && viewModel ? (
             <ColumnThresholdSummary
-              activeColumnNames={getActiveColumnNames(viewModel)}
+              visibleColumnNames={visibleColumnNames}
+              activeColumnNames={activeColumnNames}
               activeItemCount={response.sampleSize}
               columnAgingModels={response.columnAgingModels ?? []}
+              hideEmptyColumns={hideEmptyColumns}
             />
           ) : (
             <GlobalThresholdSummary response={response} />
@@ -404,7 +463,7 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
           agingModel={response.agingModel}
           mode={chartView}
           columnAgingModels={response.columnAgingModels ?? []}
-          visibleColumnNames={viewModel ? getActiveColumnNames(viewModel) : []}
+          visibleColumnNames={visibleColumnNames}
           historicalWindowDays={response.historicalWindowDays}
           activeItemCount={response.sampleSize}
           dataVersion={response.dataVersion}
@@ -446,22 +505,26 @@ function GlobalThresholdSummary({ response }: { response: FlowAnalyticsResponse 
 }
 
 function ColumnThresholdSummary({
+  visibleColumnNames,
   activeColumnNames,
   activeItemCount,
   columnAgingModels,
+  hideEmptyColumns,
 }: {
+  visibleColumnNames: string[];
   activeColumnNames: string[];
   activeItemCount: number;
   columnAgingModels: ColumnAgingModel[];
+  hideEmptyColumns: boolean;
 }) {
   const modelsByColumn = new Map(columnAgingModels.map((model) => [model.columnName, model]));
-  const activeModels = activeColumnNames
+  const visibleModels = visibleColumnNames
     .map((columnName) => modelsByColumn.get(columnName))
     .filter((model): model is ColumnAgingModel => Boolean(model));
-  const modeledColumnCount = activeModels.filter((model) => model.sampleSize > 0).length;
-  const lowConfidenceCount = activeModels.filter((model) => model.lowConfidenceReason).length;
+  const modeledColumnCount = visibleModels.filter((model) => model.sampleSize > 0).length;
+  const lowConfidenceCount = visibleModels.filter((model) => model.lowConfidenceReason).length;
 
-  if (activeColumnNames.length === 0) {
+  if (visibleColumnNames.length === 0) {
     return <span>No current-column dwell data yet.</span>;
   }
 
@@ -470,9 +533,11 @@ function ColumnThresholdSummary({
       <span>
         Column thresholds:{' '}
         <strong style={{ color: palette.ink }}>
-          {activeColumnNames.length} active {activeColumnNames.length === 1 ? 'column' : 'columns'}
+          {visibleColumnNames.length} {hideEmptyColumns ? 'active' : 'board'} {visibleColumnNames.length === 1 ? 'column' : 'columns'}
         </strong>{' '}
-        ({modeledColumnCount} with completed samples)
+        {hideEmptyColumns
+          ? `(${modeledColumnCount} with completed samples)`
+          : `(${activeColumnNames.length} with active items; ${modeledColumnCount} with completed samples)`}
         <span style={{ marginLeft: '0.55rem' }}>
           <span style={codeStyle}>{activeItemCount} active items</span>
         </span>
@@ -480,17 +545,17 @@ function ColumnThresholdSummary({
       <span>
         p50 / p70 / p85 are calculated per column from completed-story dwell time.
       </span>
-      {activeModels.slice(0, 3).map((model) => (
+      {visibleModels.slice(0, 3).map((model) => (
         <span key={model.columnName} style={codeStyle}>
           {model.columnName}: {model.p50.toFixed(1)}d / {model.p70.toFixed(1)}d / {model.p85.toFixed(1)}d
         </span>
       ))}
-      {activeModels.length > 3 && (
-        <span style={codeStyle}>+{activeModels.length - 3} more columns</span>
+      {visibleModels.length > 3 && (
+        <span style={codeStyle}>+{visibleModels.length - 3} more columns</span>
       )}
       {lowConfidenceCount > 0 && (
         <span style={{ color: palette.warning }}>
-          ⚠ {lowConfidenceCount} active {lowConfidenceCount === 1 ? 'column has' : 'columns have'} low-confidence samples.
+          ⚠ {lowConfidenceCount} visible {lowConfidenceCount === 1 ? 'column has' : 'columns have'} low-confidence samples.
         </span>
       )}
     </>
@@ -502,6 +567,20 @@ function getActiveColumnNames(viewModel: FlowAnalyticsViewModel): string[] {
   const orderedColumns = viewModel.columnNames.filter((column) => activeColumns.has(column));
   const orderedSet = new Set(orderedColumns);
   for (const column of activeColumns) {
+    if (!orderedSet.has(column)) {
+      orderedColumns.push(column);
+      orderedSet.add(column);
+    }
+  }
+  return orderedColumns;
+}
+
+function getVisibleColumnNames(viewModel: FlowAnalyticsViewModel, hideEmptyColumns: boolean): string[] {
+  if (hideEmptyColumns) return getActiveColumnNames(viewModel);
+
+  const orderedColumns = [...viewModel.columnNames];
+  const orderedSet = new Set(orderedColumns);
+  for (const column of getActiveColumnNames(viewModel)) {
     if (!orderedSet.has(column)) {
       orderedColumns.push(column);
       orderedSet.add(column);

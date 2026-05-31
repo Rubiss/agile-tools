@@ -83,7 +83,7 @@ export function AgingThresholdDrawer({
   agingModel,
   mode = 'global',
   columnAgingModels = [],
-  visibleColumnNames = [],
+  visibleColumnNames,
   historicalWindowDays,
   activeItemCount,
   dataVersion,
@@ -114,12 +114,15 @@ export function AgingThresholdDrawer({
   if (typeof document === 'undefined') return null;
 
   const isColumnMode = mode === 'column';
-  const visibleColumnSet = new Set(visibleColumnNames);
-  const columnModelsForView = visibleColumnNames.length > 0
+  const hasColumnFilter = visibleColumnNames !== undefined;
+  const columnModelsForView = hasColumnFilter
     ? visibleColumnNames
       .map((columnName) => columnAgingModels.find((model) => model.columnName === columnName))
       .filter((model): model is ColumnAgingModel => Boolean(model))
     : columnAgingModels;
+  const cardVisibleColumnNames = visibleColumnNames ?? columnModelsForView.map((model) => model.columnName);
+  const visibleColumnSet = new Set(cardVisibleColumnNames);
+  const omitsColumnsWithoutActiveStories = hasColumnFilter && columnModelsForView.length < columnAgingModels.length;
   const columnSampleSize = columnModelsForView.reduce((sum, model) => sum + model.sampleSize, 0);
   const lowConfidenceColumns = columnModelsForView.filter((model) => model.lowConfidenceReason);
   const hasSample = isColumnMode ? columnModelsForView.some((model) => model.sampleSize > 0) : agingModel.sampleSize > 0;
@@ -294,8 +297,9 @@ export function AgingThresholdDrawer({
             {isColumnMode ? (
               <ColumnThresholdCards
                 columnModels={columnModelsForView}
-                visibleColumnNames={visibleColumnNames}
+                visibleColumnNames={cardVisibleColumnNames}
                 visibleColumnSet={visibleColumnSet}
+                omitsColumnsWithoutActiveStories={omitsColumnsWithoutActiveStories}
               />
             ) : (
               <>
@@ -337,10 +341,12 @@ function ColumnThresholdCards({
   columnModels,
   visibleColumnNames,
   visibleColumnSet,
+  omitsColumnsWithoutActiveStories,
 }: {
   columnModels: ColumnAgingModel[];
   visibleColumnNames: string[];
   visibleColumnSet: Set<string>;
+  omitsColumnsWithoutActiveStories: boolean;
 }) {
   if (columnModels.length === 0) {
     return (
@@ -374,7 +380,7 @@ function ColumnThresholdCards({
         Active work is classified by comparing its working days in the current column against that
         column's p50 and p85 cutoffs each time the page is loaded.
       </p>
-      {visibleColumnSet.size > 0 && (
+      {omitsColumnsWithoutActiveStories && visibleColumnSet.size > 0 && (
         <p style={{ ...sectionCopyStyle, marginTop: '0.5rem' }}>
           Columns without active stories are omitted from the chart to leave more room for columns
           that currently contain work.

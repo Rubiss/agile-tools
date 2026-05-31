@@ -79,9 +79,44 @@ function viewModel(points: ColumnScatterDatum[]): FlowAnalyticsViewModel {
 }
 
 describe('ColumnAgingScatterPlot', () => {
-  it('omits columns that do not currently contain active stories', () => {
+  it('shows board columns by default even when they do not currently contain active stories', () => {
     render(
       <ColumnAgingScatterPlot
+        viewModel={viewModel([
+          columnPoint({
+            workItemId: '11111111-1111-4111-8111-111111111111',
+            issueKey: 'AGILE-101',
+            currentColumn: 'Selected for Development',
+          }),
+          columnPoint({
+            workItemId: '22222222-2222-4222-8222-222222222222',
+            issueKey: 'AGILE-102',
+            currentColumn: 'In Progress',
+          }),
+        ])}
+      />,
+    );
+
+    expect(screen.getByText('Selected for De…')).toBeInTheDocument();
+    expect(screen.getByText('In Progress')).toBeInTheDocument();
+    expect(screen.getByText('Ready for Review')).toBeInTheDocument();
+  });
+
+  it('renders board columns and thresholds when there are no active stories', () => {
+    const { container } = render(<ColumnAgingScatterPlot viewModel={viewModel([])} />);
+
+    expect(screen.queryByText('No per-column dwell data to display.')).not.toBeInTheDocument();
+    expect(screen.getByText('Selected for De…')).toBeInTheDocument();
+    expect(screen.getByText('In Progress')).toBeInTheDocument();
+    expect(screen.getByText('Ready for Review')).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-testid="column-threshold-segment"]').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('circle')).toHaveLength(0);
+  });
+
+  it('omits columns that do not currently contain active stories when requested', () => {
+    render(
+      <ColumnAgingScatterPlot
+        hideEmptyColumns
         viewModel={viewModel([
           columnPoint({
             workItemId: '11111111-1111-4111-8111-111111111111',
@@ -131,5 +166,48 @@ describe('ColumnAgingScatterPlot', () => {
     const cxValues = Array.from(container.querySelectorAll('circle')).map((circle) => circle.getAttribute('cx'));
 
     expect(new Set(cxValues).size).toBe(3);
+  });
+
+  it('keeps threshold markers, labels, and points inside the plot bounds', () => {
+    const { container } = render(
+      <ColumnAgingScatterPlot
+        viewModel={viewModel([
+          columnPoint({
+            workItemId: '11111111-1111-4111-8111-111111111111',
+            issueKey: 'AGILE-101',
+            currentColumn: 'Selected for Development',
+            y: 7,
+          }),
+          columnPoint({
+            workItemId: '22222222-2222-4222-8222-222222222222',
+            issueKey: 'AGILE-102',
+            currentColumn: 'Ready for Review',
+            y: 2,
+          }),
+        ])}
+      />,
+    );
+
+    const minX = 58;
+    const maxX = 892;
+    const values = (selector: string, attribute: string) =>
+      Array.from(container.querySelectorAll(selector)).map((node) => Number(node.getAttribute(attribute)));
+
+    for (const x of values('[data-testid="column-threshold-segment"]', 'x1')) {
+      expect(x).toBeGreaterThanOrEqual(minX);
+      expect(x).toBeLessThanOrEqual(maxX);
+    }
+    for (const x of values('[data-testid="column-threshold-segment"]', 'x2')) {
+      expect(x).toBeGreaterThanOrEqual(minX);
+      expect(x).toBeLessThanOrEqual(maxX);
+    }
+    for (const x of values('[data-testid="column-threshold-label"]', 'x')) {
+      expect(x).toBeGreaterThanOrEqual(minX);
+      expect(x).toBeLessThanOrEqual(maxX);
+    }
+    for (const x of values('circle', 'cx')) {
+      expect(x).toBeGreaterThanOrEqual(minX);
+      expect(x).toBeLessThanOrEqual(maxX);
+    }
   });
 });
