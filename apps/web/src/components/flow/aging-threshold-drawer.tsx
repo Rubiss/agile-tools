@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
-import type { AgingModel } from '@agile-tools/shared/contracts/api';
+import type { AgingModel, ColumnAgingModel } from '@agile-tools/shared/contracts/api';
 import {
   codeStyle,
   eyebrowStyle,
@@ -24,6 +24,9 @@ const AGING_CONFIDENCE_THRESHOLD = 30;
 interface AgingThresholdDrawerProps {
   open: boolean;
   agingModel: AgingModel;
+  mode?: 'global' | 'column';
+  columnAgingModels?: ColumnAgingModel[];
+  visibleColumnNames?: string[];
   historicalWindowDays: number;
   activeItemCount: number;
   dataVersion: string;
@@ -78,6 +81,9 @@ function StepCard({
 export function AgingThresholdDrawer({
   open,
   agingModel,
+  mode = 'global',
+  columnAgingModels = [],
+  visibleColumnNames = [],
   historicalWindowDays,
   activeItemCount,
   dataVersion,
@@ -107,8 +113,17 @@ export function AgingThresholdDrawer({
   if (!open) return null;
   if (typeof document === 'undefined') return null;
 
-  const hasSample = agingModel.sampleSize > 0;
-  const lowConfidence = Boolean(agingModel.lowConfidenceReason);
+  const isColumnMode = mode === 'column';
+  const visibleColumnSet = new Set(visibleColumnNames);
+  const columnModelsForView = visibleColumnNames.length > 0
+    ? visibleColumnNames
+      .map((columnName) => columnAgingModels.find((model) => model.columnName === columnName))
+      .filter((model): model is ColumnAgingModel => Boolean(model))
+    : columnAgingModels;
+  const columnSampleSize = columnModelsForView.reduce((sum, model) => sum + model.sampleSize, 0);
+  const lowConfidenceColumns = columnModelsForView.filter((model) => model.lowConfidenceReason);
+  const hasSample = isColumnMode ? columnModelsForView.some((model) => model.sampleSize > 0) : agingModel.sampleSize > 0;
+  const lowConfidence = isColumnMode ? lowConfidenceColumns.length > 0 : Boolean(agingModel.lowConfidenceReason);
 
   return createPortal(
     <div
@@ -155,8 +170,9 @@ export function AgingThresholdDrawer({
                 How aging thresholds were calculated
               </h2>
               <p style={{ ...sectionCopyStyle, marginTop: '0.55rem', maxWidth: '28rem' }}>
-                Inputs and method used to derive the p50 / p70 / p85 cycle-time thresholds that
-                color each item in the scatter plot.
+                {isColumnMode
+                  ? 'Inputs and method used to derive the per-column p50 / p70 / p85 working-day thresholds that color each item in the column aging plot.'
+                  : 'Inputs and method used to derive the p50 / p70 / p85 cycle-time thresholds that color each item in the scatter plot.'}
               </p>
             </div>
             <button
@@ -186,9 +202,11 @@ export function AgingThresholdDrawer({
                 <p style={{ ...statValueStyle, fontSize: '1.05rem' }}>{historicalWindowDays} days</p>
               </article>
               <article style={statCardStyle}>
-                <p style={statLabelStyle}>Completed sample</p>
+                <p style={statLabelStyle}>{isColumnMode ? 'Column observations' : 'Completed sample'}</p>
                 <p style={{ ...statValueStyle, fontSize: '1.05rem' }}>
-                  {agingModel.sampleSize} {agingModel.sampleSize === 1 ? 'story' : 'stories'}
+                  {isColumnMode
+                    ? `${columnSampleSize} ${columnSampleSize === 1 ? 'sample' : 'samples'}`
+                    : `${agingModel.sampleSize} ${agingModel.sampleSize === 1 ? 'story' : 'stories'}`}
                 </p>
               </article>
               <article style={statCardStyle}>
@@ -197,7 +215,9 @@ export function AgingThresholdDrawer({
               </article>
               <article style={statCardStyle}>
                 <p style={statLabelStyle}>Metric basis</p>
-                <p style={{ ...statValueStyle, fontSize: '1.05rem' }}>Cycle time</p>
+                <p style={{ ...statValueStyle, fontSize: '1.05rem' }}>
+                  {isColumnMode ? 'Column working days' : 'Cycle time'}
+                </p>
               </article>
               <article style={statCardStyle}>
                 <p style={statLabelStyle}>Pinned snapshot</p>
@@ -207,23 +227,31 @@ export function AgingThresholdDrawer({
               </article>
             </div>
             <p style={{ ...sectionCopyStyle, marginTop: '0.85rem' }}>
-              Cycle time is measured in fractional days from when a story first entered an
-              in-progress status (falling back to its creation timestamp) to when it was completed.
-              Only stories completed inside the historical window contribute to the model.
+              {isColumnMode
+                ? 'Column dwell is measured in working days for each board column a completed story visited inside the historical window. Hold time is subtracted by overlap with each column visit, repeated visits to the same column are summed, and the board mapping is pinned to the synced snapshot.'
+                : 'Cycle time is measured in fractional days from when a story first entered an in-progress status (falling back to its creation timestamp) to when it was completed. Only stories completed inside the historical window contribute to the model.'}
             </p>
           </StepCard>
 
           <StepCard step={2} title="Percentile method">
             <div style={{ display: 'grid', gap: '0.75rem' }}>
               <p style={{ ...sectionCopyStyle, marginTop: 0 }}>
-                The completed cycle times are sorted ascending, then summarized with the
-                nearest-rank percentile method (0-indexed, rounded down).
+                {isColumnMode
+                  ? 'Each column is modeled independently. Completed-story dwell times for that column are sorted ascending, then summarized with the nearest-rank percentile method (0-indexed, rounded down).'
+                  : 'The completed cycle times are sorted ascending, then summarized with the nearest-rank percentile method (0-indexed, rounded down).'}
               </p>
               <ol style={{ margin: 0, paddingLeft: '1.1rem', display: 'grid', gap: '0.55rem', color: palette.muted }}>
-                <li>Collect the cycle time of every story completed inside the {historicalWindowDays}-day window.</li>
+                <li>
+                  {isColumnMode
+                    ? `Collect each completed story's working-day dwell for every board column it visited inside the ${historicalWindowDays}-day window.`
+                    : `Collect the cycle time of every story completed inside the ${historicalWindowDays}-day window.`}
+                </li>
                 <li>Drop any negative or missing values, then sort ascending.</li>
                 <li>For each percentile <em>p</em>, pick the value at index <span style={codeStyle}>floor(p/100 × N)</span>, clamped to the last element.</li>
-                <li>Items above p85 are flagged <strong style={{ color: palette.danger }}>aging</strong>, between p50 and p85 are <strong style={{ color: palette.warning }}>watch</strong>, and at or below p50 are <strong style={{ color: palette.positive }}>normal</strong>.</li>
+                <li>
+                  {isColumnMode ? 'Active items are compared against the thresholds for their current column only.' : 'Items are compared against the global cycle-time thresholds.'}{' '}
+                  Values above p85 are flagged <strong style={{ color: palette.danger }}>aging</strong>, between p50 and p85 are <strong style={{ color: palette.warning }}>watch</strong>, and at or below p50 are <strong style={{ color: palette.positive }}>normal</strong>.
+                </li>
               </ol>
             </div>
           </StepCard>
@@ -233,56 +261,125 @@ export function AgingThresholdDrawer({
               <p style={{ ...sectionCopyStyle, marginTop: 0 }}>
                 Thresholds are considered reliable once at least{' '}
                 <strong style={{ color: palette.ink }}>{AGING_CONFIDENCE_THRESHOLD}</strong>{' '}
-                stories have completed in the selected window. Below that, the model still renders
-                but is flagged as low-confidence.
+                {isColumnMode ? 'completed column observations' : 'stories'} have completed in the selected window.
+                Below that, the model still renders but is flagged as low-confidence.
               </p>
               {lowConfidence ? (
                 <div style={{ ...noticeStyle('warning'), marginTop: 0 }}>
-                  <p style={{ margin: 0 }}>{agingModel.lowConfidenceReason}</p>
+                  <p style={{ margin: 0 }}>
+                    {isColumnMode
+                      ? `${lowConfidenceColumns.length} ${lowConfidenceColumns.length === 1 ? 'column has' : 'columns have'} low-confidence samples.`
+                      : agingModel.lowConfidenceReason}
+                  </p>
                 </div>
               ) : hasSample ? (
                 <div style={{ ...noticeStyle('success'), marginTop: 0 }}>
                   <p style={{ margin: 0 }}>
-                    Sample size of {agingModel.sampleSize} meets the confidence threshold.
+                    {isColumnMode
+                      ? 'Active-column samples meet the confidence threshold.'
+                      : `Sample size of ${agingModel.sampleSize} meets the confidence threshold.`}
                   </p>
                 </div>
               ) : (
                 <div style={{ ...noticeStyle('warning'), marginTop: 0 }}>
-                  <p style={{ margin: 0 }}>No completed stories in this window yet.</p>
+                  <p style={{ margin: 0 }}>
+                    {isColumnMode ? 'No completed column samples in this window yet.' : 'No completed stories in this window yet.'}
+                  </p>
                 </div>
               )}
             </div>
           </StepCard>
 
-          <StepCard step={4} title="Current thresholds">
-            <div style={statGridStyle}>
-              <article style={statCardStyle}>
-                <p style={statLabelStyle}>p50 · normal cutoff</p>
-                <p style={{ ...statValueStyle, color: palette.positive }}>
-                  {agingModel.p50.toFixed(1)}d
+          <StepCard step={4} title={isColumnMode ? 'Current column thresholds' : 'Current thresholds'}>
+            {isColumnMode ? (
+              <ColumnThresholdCards
+                columnModels={columnModelsForView}
+                visibleColumnNames={visibleColumnNames}
+                visibleColumnSet={visibleColumnSet}
+              />
+            ) : (
+              <>
+                <div style={statGridStyle}>
+                  <article style={statCardStyle}>
+                    <p style={statLabelStyle}>p50 · normal cutoff</p>
+                    <p style={{ ...statValueStyle, color: palette.positive }}>
+                      {agingModel.p50.toFixed(1)}d
+                    </p>
+                  </article>
+                  <article style={statCardStyle}>
+                    <p style={statLabelStyle}>p70 · median watch</p>
+                    <p style={{ ...statValueStyle, color: palette.warning }}>
+                      {agingModel.p70.toFixed(1)}d
+                    </p>
+                  </article>
+                  <article style={statCardStyle}>
+                    <p style={statLabelStyle}>p85 · aging cutoff</p>
+                    <p style={{ ...statValueStyle, color: palette.danger }}>
+                      {agingModel.p85.toFixed(1)}d
+                    </p>
+                  </article>
+                </div>
+                <p style={{ ...sectionCopyStyle, marginTop: '0.85rem' }}>
+                  An active work item is classified by comparing its current age (in days) against
+                  these cutoffs each time the page is loaded.
                 </p>
-              </article>
-              <article style={statCardStyle}>
-                <p style={statLabelStyle}>p70 · median watch</p>
-                <p style={{ ...statValueStyle, color: palette.warning }}>
-                  {agingModel.p70.toFixed(1)}d
-                </p>
-              </article>
-              <article style={statCardStyle}>
-                <p style={statLabelStyle}>p85 · aging cutoff</p>
-                <p style={{ ...statValueStyle, color: palette.danger }}>
-                  {agingModel.p85.toFixed(1)}d
-                </p>
-              </article>
-            </div>
-            <p style={{ ...sectionCopyStyle, marginTop: '0.85rem' }}>
-              An active work item is classified by comparing its current age (in days) against
-              these cutoffs each time the page is loaded.
-            </p>
+              </>
+            )}
           </StepCard>
         </div>
       </div>
     </div>,
     document.body,
+  );
+}
+
+function ColumnThresholdCards({
+  columnModels,
+  visibleColumnNames,
+  visibleColumnSet,
+}: {
+  columnModels: ColumnAgingModel[];
+  visibleColumnNames: string[];
+  visibleColumnSet: Set<string>;
+}) {
+  if (columnModels.length === 0) {
+    return (
+      <div style={{ ...noticeStyle('warning'), marginTop: 0 }}>
+        <p style={{ margin: 0 }}>
+          {visibleColumnNames.length > 0
+            ? 'The active columns do not have completed-story threshold samples yet.'
+            : 'No active columns are currently plotted.'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div style={statGridStyle}>
+        {columnModels.map((model) => (
+          <article key={model.columnName} style={statCardStyle}>
+            <p style={statLabelStyle}>{model.columnName}</p>
+            <p style={{ ...statValueStyle, fontSize: '1rem', color: palette.ink }}>
+              {model.p50.toFixed(1)}d / {model.p70.toFixed(1)}d / {model.p85.toFixed(1)}d
+            </p>
+            <p style={{ ...sectionCopyStyle, margin: '0.45rem 0 0', fontSize: '0.78rem' }}>
+              {model.sampleSize} completed {model.sampleSize === 1 ? 'sample' : 'samples'}
+              {model.lowConfidenceReason ? ` · ${model.lowConfidenceReason}` : ''}
+            </p>
+          </article>
+        ))}
+      </div>
+      <p style={{ ...sectionCopyStyle, marginTop: '0.85rem' }}>
+        Active work is classified by comparing its working days in the current column against that
+        column's p50 and p85 cutoffs each time the page is loaded.
+      </p>
+      {visibleColumnSet.size > 0 && (
+        <p style={{ ...sectionCopyStyle, marginTop: '0.5rem' }}>
+          Columns without active stories are omitted from the chart to leave more room for columns
+          that currently contain work.
+        </p>
+      )}
+    </>
   );
 }

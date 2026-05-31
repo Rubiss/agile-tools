@@ -7,6 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FlowAnalyticsSection } from './flow-analytics-section';
 
+const { agingThresholdDrawerMock } = vi.hoisted(() => ({
+  agingThresholdDrawerMock: vi.fn(() => null),
+}));
+
 vi.mock('./aging-scatter-plot', () => ({
   AgingScatterPlot: () => <div>Global chart</div>,
 }));
@@ -20,7 +24,7 @@ vi.mock('./work-item-detail-drawer', () => ({
 }));
 
 vi.mock('./aging-threshold-drawer', () => ({
-  AgingThresholdDrawer: () => null,
+  AgingThresholdDrawer: agingThresholdDrawerMock,
 }));
 
 const STORAGE_PREFIX = 'agile-tools:flow-filters:v1:';
@@ -47,6 +51,73 @@ function emptyFlowResponse() {
   });
 }
 
+function columnFlowResponse() {
+  return jsonResponse({
+    scopeId: TEST_SCOPE_ID,
+    dataVersion: 'sync-1',
+    syncedAt: new Date('2026-04-19T12:00:00Z').toISOString(),
+    historicalWindowDays: 90,
+    sampleSize: 2,
+    warnings: [],
+    agingModel: {
+      metricBasis: 'cycle_time',
+      p50: 7,
+      p70: 10,
+      p85: 14,
+      sampleSize: 40,
+    },
+    columnAgingModels: [
+      {
+        columnName: 'Selected for Development',
+        statusIds: ['selected'],
+        metricBasis: 'column_working_days',
+        p50: 2,
+        p70: 3,
+        p85: 5,
+        sampleSize: 40,
+      },
+      {
+        columnName: 'In Progress',
+        statusIds: ['progress'],
+        metricBasis: 'column_working_days',
+        p50: 4,
+        p70: 6,
+        p85: 9,
+        sampleSize: 20,
+        lowConfidenceReason: 'Only 20 completed samples.',
+      },
+    ],
+    points: [
+      {
+        workItemId: '11111111-1111-4111-8111-111111111111',
+        issueKey: 'AGILE-101',
+        summary: 'Selected story',
+        currentStatus: 'Selected for Development',
+        currentColumn: 'Selected for Development',
+        ageDays: 4,
+        agingZone: 'normal',
+        currentColumnAgeDays: 2,
+        currentColumnAgingZone: 'normal',
+        onHoldNow: false,
+        columnDurations: [],
+      },
+      {
+        workItemId: '22222222-2222-4222-8222-222222222222',
+        issueKey: 'AGILE-102',
+        summary: 'In progress story',
+        currentStatus: 'In Progress',
+        currentColumn: 'In Progress',
+        ageDays: 8,
+        agingZone: 'watch',
+        currentColumnAgeDays: 5,
+        currentColumnAgingZone: 'watch',
+        onHoldNow: false,
+        columnDurations: [],
+      },
+    ],
+  });
+}
+
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -55,6 +126,7 @@ function jsonResponse(body: unknown): Response {
 }
 
 afterEach(() => {
+  agingThresholdDrawerMock.mockClear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   try {
@@ -282,6 +354,33 @@ describe('FlowAnalyticsSection', () => {
         render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
 
         expect(await screen.findByText('Column chart')).toBeVisible();
+      });
+
+      it('uses column-specific threshold summary and drawer props in column view', async () => {
+        const user = userEvent.setup();
+        const fetchMock = vi.fn().mockResolvedValue(columnFlowResponse());
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<FlowAnalyticsSection scopeId={TEST_SCOPE_ID} filterOptions={filterOptions} />);
+
+        await screen.findByText('Global chart');
+
+        await user.click(screen.getByRole('button', { name: /column aging/i }));
+
+        expect(await screen.findByText('Column chart')).toBeVisible();
+        expect(screen.getByText(/^Column thresholds:/i)).toBeInTheDocument();
+        expect(screen.getByText(/p50 \/ p70 \/ p85 are calculated per column/i)).toBeInTheDocument();
+        expect(agingThresholdDrawerMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            mode: 'column',
+            columnAgingModels: expect.arrayContaining([
+              expect.objectContaining({ columnName: 'Selected for Development' }),
+              expect.objectContaining({ columnName: 'In Progress' }),
+            ]),
+            visibleColumnNames: ['Selected for Development', 'In Progress'],
+          }),
+          undefined,
+        );
       });
     });
   });

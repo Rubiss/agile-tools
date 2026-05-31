@@ -21,7 +21,7 @@ export function ColumnAgingScatterPlot({
   height = 360,
 }: ColumnAgingScatterPlotProps) {
   const points = viewModel.columnSeries.flatMap((serie) => serie.data);
-  const columns = viewModel.columnNames;
+  const columns = buildVisibleColumns(viewModel, points);
 
   if (points.length === 0 || columns.length === 0) {
     return (
@@ -47,10 +47,16 @@ export function ColumnAgingScatterPlot({
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const columnStep = columns.length > 1 ? plotWidth / (columns.length - 1) : 0;
-  const thresholds = viewModel.columnAgingModels.flatMap((model) => [model.p50, model.p85]);
+  const thresholdModels = viewModel.columnAgingModels.filter((model) => columns.includes(model.columnName));
+  const thresholds = thresholdModels.flatMap((model) => [model.p50, model.p85]);
   const maxY = Math.max(1, ...points.map((point) => point.y), ...thresholds);
   const yMax = Math.ceil(maxY * 1.15);
   const yTicks = buildTicks(yMax);
+  const maxPointOffset = columns.length > 1
+    ? Math.max(0, Math.min(34, (columnStep / 2) - 8))
+    : Math.max(0, Math.min(44, (plotWidth / 2) - 8));
+  const pointLayouts = layoutColumnPoints(viewModel, columns, yForDays, maxPointOffset);
+  const columnIndexByName = new Map(columns.map((column, index) => [column, index]));
 
   function xForColumn(index: number): number {
     return margin.left + (columns.length === 1 ? plotWidth / 2 : index * columnStep);
@@ -146,8 +152,11 @@ export function ColumnAgingScatterPlot({
         </text>
 
         {viewModel.columnSeries.flatMap((serie) =>
-          serie.data.map((point, pointIndex) => {
-            const x = xForColumn(point.x) + jitter(pointIndex, serie.id);
+          serie.data.map((point) => {
+            const columnIndex = columnIndexByName.get(point.currentColumn);
+            if (columnIndex === undefined) return null;
+            const layoutKey = pointLayoutKey(serie.id, point);
+            const x = xForColumn(columnIndex) + (pointLayouts.get(layoutKey) ?? 0);
             const y = yForDays(point.y);
             return (
               <g key={`${serie.id}-${point.workItemId}`} role="button" tabIndex={0} aria-label={`${point.issueKey}: ${point.y.toFixed(1)} working days in ${point.currentColumn}`}>
@@ -170,6 +179,22 @@ export function ColumnAgingScatterPlot({
       </svg>
     </div>
   );
+}
+
+function buildVisibleColumns(
+  viewModel: FlowAnalyticsViewModel,
+  points: ColumnScatterDatum[],
+): string[] {
+  const activeColumns = new Set(points.map((point) => point.currentColumn));
+  const orderedColumns = viewModel.columnNames.filter((column) => activeColumns.has(column));
+  const orderedSet = new Set(orderedColumns);
+  for (const point of points) {
+    if (!orderedSet.has(point.currentColumn)) {
+      orderedColumns.push(point.currentColumn);
+      orderedSet.add(point.currentColumn);
+    }
+  }
+  return orderedColumns;
 }
 
 function ThresholdSegment({
@@ -224,9 +249,60 @@ function buildTooltip(point: ColumnScatterDatum): string {
   ].filter(Boolean).join('\n');
 }
 
-function jitter(index: number, zone: ColumnScatterDatum['agingZone']): number {
-  const zoneOffset = zone === 'normal' ? -2 : zone === 'watch' ? 0 : 2;
-  return ((index % 5) - 2) * 2 + zoneOffset;
+function layoutColumnPoints(
+  viewModel: FlowAnalyticsViewModel,
+  columns: string[],
+  yForDays: (days: number) => number,
+  maxOffset: number,
+): Map<string, number> {
+  const columnSet = new Set(columns);
+  const pointsByColumn = new Map<string, Array<{ point: ColumnScatterDatum; serieId: ColumnScatterDatum['agingZone']; y: number }>>();
+
+  for (const serie of viewModel.columnSeries) {
+    for (const point of serie.data) {
+      if (!columnSet.has(point.currentColumn)) continue;
+      const columnPoints = pointsByColumn.get(point.currentColumn) ?? [];
+      columnPoints.push({ point, serieId: serie.id, y: yForDays(point.y) });
+      pointsByColumn.set(point.currentColumn, columnPoints);
+    }
+  }
+
+  const offsets = new Map<string, number>();
+  for (const columnPoints of pointsByColumn.values()) {
+    const sorted = columnPoints.sort((a, b) => {
+      if (a.y !== b.y) return a.y - b.y;
+      return a.point.issueKey.localeCompare(b.point.issueKey) || a.point.workItemId.localeCompare(b.point.workItemId);
+    });
+    const clusters: typeof sorted[] = [];
+    for (const item of sorted) {
+      const currentCluster = clusters[clusters.length - 1];
+      const previous = currentCluster?.[currentCluster.length - 1];
+      if (!currentCluster || !previous || Math.abs(item.y - previous.y) > 14) {
+        clusters.push([item]);
+      } else {
+        currentCluster.push(item);
+      }
+    }
+
+    for (const cluster of clusters) {
+      const clusterOffsets = buildOffsets(cluster.length, maxOffset);
+      cluster.forEach((item, index) => {
+        offsets.set(pointLayoutKey(item.serieId, item.point), clusterOffsets[index] ?? 0);
+      });
+    }
+  }
+
+  return offsets;
+}
+
+function buildOffsets(count: number, maxOffset: number): number[] {
+  if (count <= 1 || maxOffset <= 0) return Array.from({ length: count }, () => 0);
+  const spacing = Math.min(14, (maxOffset * 2) / (count - 1));
+  return Array.from({ length: count }, (_, index) => (index - ((count - 1) / 2)) * spacing);
+}
+
+function pointLayoutKey(zone: ColumnScatterDatum['agingZone'], point: ColumnScatterDatum): string {
+  return `${zone}:${point.workItemId}`;
 }
 
 function truncate(value: string, max: number): string {

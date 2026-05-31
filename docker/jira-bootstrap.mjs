@@ -15,9 +15,10 @@ class JiraRequestError extends Error {
 }
 
 const execFile = promisify(execFileCallback);
-const BOOTSTRAP_DATASET_VERSION = 3;
+const BOOTSTRAP_DATASET_VERSION = 4;
 const MIN_COMPLETED_STORY_COUNT = 72;
 const MIN_IN_PROGRESS_STORY_COUNT = 10;
+const SELECTED_ONLY_ACTIVE_STORY_INTERVAL = 3;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const FORECAST_HISTORY_WINDOW_DAYS = 90;
 
@@ -475,23 +476,28 @@ function buildInProgressStoryPlans(referenceNow) {
   return Array.from({ length: config.inProgressStoryCount }, (_, index) => {
     const storyNumber = padSequence(index + 1);
     const ageDays = baseAges[index] ?? (baseAges[baseAges.length - 1] + ((index - baseAges.length + 1) * 4));
+    const staysSelected = index % SELECTED_ONLY_ACTIVE_STORY_INTERVAL === 0;
     const inProgressDaysAgo = Math.max(0.25, Number((ageDays * 0.45).toFixed(2)));
     const createdDaysAgo = ageDays + 1 + (index % 2);
 
     return {
       createdAt: timestampDaysAgo(referenceNow, createdDaysAgo, index, 8),
-      description: `Bootstrap story fixture actively in progress for roughly ${ageDays} day(s).`,
+      description: staysSelected
+        ? `Bootstrap story fixture actively selected for roughly ${ageDays} day(s).`
+        : `Bootstrap story fixture actively in progress for roughly ${ageDays} day(s).`,
       seedState: "in-progress",
-      summary: `[AT] Story In Progress ${storyNumber} (${ageDays}d age)`,
+      summary: `[AT] Story ${staysSelected ? "Selected" : "In Progress"} ${storyNumber} (${ageDays}d age)`,
       transitions: [
         {
           changedAt: timestampDaysAgo(referenceNow, ageDays, index, 9),
           preferredNames: ["Selected for Development", "In Progress", "Doing"],
         },
-        {
-          changedAt: timestampDaysAgo(referenceNow, inProgressDaysAgo, index, 10),
-          preferredNames: ["In Progress", "Doing"],
-        },
+        ...(staysSelected ? [] : [
+          {
+            changedAt: timestampDaysAgo(referenceNow, inProgressDaysAgo, index, 10),
+            preferredNames: ["In Progress", "Doing"],
+          },
+        ]),
       ],
     };
   });

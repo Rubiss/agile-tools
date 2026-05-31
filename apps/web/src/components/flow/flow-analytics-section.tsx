@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import type { FlowAnalyticsResponse } from '@agile-tools/shared/contracts/api';
-import { shapeFlowAnalytics } from '@/server/views/flow-analytics';
+import type { ColumnAgingModel, FlowAnalyticsResponse } from '@agile-tools/shared/contracts/api';
+import { shapeFlowAnalytics, type FlowAnalyticsViewModel } from '@/server/views/flow-analytics';
 import { FlowFiltersPanel } from './flow-filters';
 import type { FlowFilters, FilterOptions } from './flow-filters';
 import { AgingScatterPlot } from './aging-scatter-plot';
@@ -367,28 +367,14 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
             gap: '0.5rem 0.75rem',
           }}
         >
-          {response.agingModel.sampleSize > 0 ? (
-            <span>
-              Thresholds (p50 / p70 / p85):{' '}
-              <strong style={{ color: palette.ink }}>
-                {response.agingModel.p50.toFixed(1)}d / {response.agingModel.p70.toFixed(1)}d / {response.agingModel.p85.toFixed(1)}d
-              </strong>{' '}from {response.agingModel.sampleSize} completed stories
-              <span style={{ marginLeft: '0.55rem' }}>
-                <span style={codeStyle}>{response.sampleSize} active items</span>
-              </span>
-            </span>
+          {chartView === 'column' && viewModel ? (
+            <ColumnThresholdSummary
+              activeColumnNames={getActiveColumnNames(viewModel)}
+              activeItemCount={response.sampleSize}
+              columnAgingModels={response.columnAgingModels ?? []}
+            />
           ) : (
-            <span>No aging thresholds yet (sync more data)</span>
-          )}
-          {response.agingModel.lowConfidenceReason && (
-            <span style={{ color: palette.warning }}>
-              ⚠ {response.agingModel.lowConfidenceReason}
-            </span>
-          )}
-          {response.columnAgingModels?.some((model) => model.lowConfidenceReason) && (
-            <span style={{ color: palette.warning }}>
-              ⚠ Some column thresholds have low-confidence samples.
-            </span>
+            <GlobalThresholdSummary response={response} />
           )}
           <button
             type="button"
@@ -416,6 +402,9 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
         <AgingThresholdDrawer
           open={thresholdDrawerOpen}
           agingModel={response.agingModel}
+          mode={chartView}
+          columnAgingModels={response.columnAgingModels ?? []}
+          visibleColumnNames={viewModel ? getActiveColumnNames(viewModel) : []}
           historicalWindowDays={response.historicalWindowDays}
           activeItemCount={response.sampleSize}
           dataVersion={response.dataVersion}
@@ -424,4 +413,99 @@ export function FlowAnalyticsSection({ scopeId, filterOptions, footer }: FlowAna
       )}
     </div>
   );
+}
+
+function GlobalThresholdSummary({ response }: { response: FlowAnalyticsResponse }) {
+  return (
+    <>
+      {response.agingModel.sampleSize > 0 ? (
+        <span>
+          Thresholds (p50 / p70 / p85):{' '}
+          <strong style={{ color: palette.ink }}>
+            {response.agingModel.p50.toFixed(1)}d / {response.agingModel.p70.toFixed(1)}d / {response.agingModel.p85.toFixed(1)}d
+          </strong>{' '}from {response.agingModel.sampleSize} completed stories
+          <span style={{ marginLeft: '0.55rem' }}>
+            <span style={codeStyle}>{response.sampleSize} active items</span>
+          </span>
+        </span>
+      ) : (
+        <span>No aging thresholds yet (sync more data)</span>
+      )}
+      {response.agingModel.lowConfidenceReason && (
+        <span style={{ color: palette.warning }}>
+          ⚠ {response.agingModel.lowConfidenceReason}
+        </span>
+      )}
+      {response.columnAgingModels?.some((model) => model.lowConfidenceReason) && (
+        <span style={{ color: palette.warning }}>
+          ⚠ Some column thresholds have low-confidence samples.
+        </span>
+      )}
+    </>
+  );
+}
+
+function ColumnThresholdSummary({
+  activeColumnNames,
+  activeItemCount,
+  columnAgingModels,
+}: {
+  activeColumnNames: string[];
+  activeItemCount: number;
+  columnAgingModels: ColumnAgingModel[];
+}) {
+  const modelsByColumn = new Map(columnAgingModels.map((model) => [model.columnName, model]));
+  const activeModels = activeColumnNames
+    .map((columnName) => modelsByColumn.get(columnName))
+    .filter((model): model is ColumnAgingModel => Boolean(model));
+  const modeledColumnCount = activeModels.filter((model) => model.sampleSize > 0).length;
+  const lowConfidenceCount = activeModels.filter((model) => model.lowConfidenceReason).length;
+
+  if (activeColumnNames.length === 0) {
+    return <span>No current-column dwell data yet.</span>;
+  }
+
+  return (
+    <>
+      <span>
+        Column thresholds:{' '}
+        <strong style={{ color: palette.ink }}>
+          {activeColumnNames.length} active {activeColumnNames.length === 1 ? 'column' : 'columns'}
+        </strong>{' '}
+        ({modeledColumnCount} with completed samples)
+        <span style={{ marginLeft: '0.55rem' }}>
+          <span style={codeStyle}>{activeItemCount} active items</span>
+        </span>
+      </span>
+      <span>
+        p50 / p70 / p85 are calculated per column from completed-story dwell time.
+      </span>
+      {activeModels.slice(0, 3).map((model) => (
+        <span key={model.columnName} style={codeStyle}>
+          {model.columnName}: {model.p50.toFixed(1)}d / {model.p70.toFixed(1)}d / {model.p85.toFixed(1)}d
+        </span>
+      ))}
+      {activeModels.length > 3 && (
+        <span style={codeStyle}>+{activeModels.length - 3} more columns</span>
+      )}
+      {lowConfidenceCount > 0 && (
+        <span style={{ color: palette.warning }}>
+          ⚠ {lowConfidenceCount} active {lowConfidenceCount === 1 ? 'column has' : 'columns have'} low-confidence samples.
+        </span>
+      )}
+    </>
+  );
+}
+
+function getActiveColumnNames(viewModel: FlowAnalyticsViewModel): string[] {
+  const activeColumns = new Set(viewModel.columnSeries.flatMap((serie) => serie.data.map((point) => point.currentColumn)));
+  const orderedColumns = viewModel.columnNames.filter((column) => activeColumns.has(column));
+  const orderedSet = new Set(orderedColumns);
+  for (const column of activeColumns) {
+    if (!orderedSet.has(column)) {
+      orderedColumns.push(column);
+      orderedSet.add(column);
+    }
+  }
+  return orderedColumns;
 }
