@@ -90,6 +90,7 @@ const HTTP_REQUEST_DURATION_BOUNDARIES_SECONDS = [
   10,
 ];
 
+const METRIC_DATABASE_QUERY_DURATION = 'agile_tools_db_query_duration_seconds';
 const WORKER_OPERATION_DURATION_BOUNDARIES_SECONDS = [5, 10, 30, 60, 120, 300, 600, 900];
 
 const STANDARD_HTTP_METHODS = new Set([
@@ -147,6 +148,13 @@ function createMetricsState(options: InitializeMetricsOptions): MetricsState {
       },
       {
         instrumentName: METRIC_HTTP_CLIENT_REQUEST_DURATION,
+        aggregation: {
+          type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+          options: { boundaries: HTTP_REQUEST_DURATION_BOUNDARIES_SECONDS },
+        },
+      },
+      {
+        instrumentName: METRIC_DATABASE_QUERY_DURATION,
         aggregation: {
           type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
           options: { boundaries: HTTP_REQUEST_DURATION_BOUNDARIES_SECONDS },
@@ -265,7 +273,7 @@ function createMetricsState(options: InitializeMetricsOptions): MetricsState {
       description: 'Duration of HTTP client requests.',
       unit: 's',
     }),
-    databaseQueryDuration: meter.createHistogram('agile_tools_db_query_duration_seconds', {
+    databaseQueryDuration: meter.createHistogram(METRIC_DATABASE_QUERY_DURATION, {
       description: 'Prisma database query duration in seconds by SQL operation.',
       unit: 's',
     }),

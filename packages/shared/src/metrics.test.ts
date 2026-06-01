@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   collectPrometheusMetrics,
   initializeMetrics,
+  recordDatabaseQuery,
   recordFlowRead,
   recordForecastRun,
   recordHttpRequest,
@@ -73,6 +74,27 @@ describe('metrics', () => {
     expect(body).toContain('error_type="_OTHER"');
     expect(body).not.toContain('agile_tools_jira_requests_total');
     expect(body).not.toContain('agile_tools_jira_request_duration_seconds');
+  });
+
+  it('uses explicit fine-grained buckets for database query durations', async () => {
+    initializeMetrics({ serviceName: 'agile-tools-test', runtime: 'test' });
+
+    recordDatabaseQuery({ operation: 'SELECT', durationSeconds: 0.001 });
+
+    const { body } = await collectPrometheusMetrics();
+
+    const dbQueryBucketLines = body
+      .split('\n')
+      .filter((line) => line.startsWith('agile_tools_db_query_duration_seconds_bucket{'));
+
+    expect(
+      dbQueryBucketLines.some(
+        (line) => line.includes('operation="SELECT"') && line.includes('le="0.005"') && line.endsWith(' 1'),
+      ),
+    ).toBe(true);
+    expect(
+      dbQueryBucketLines.some((line) => line.includes('operation="SELECT"') && line.includes('le="0"')),
+    ).toBe(false);
   });
 
   it('uses minute-scale buckets for worker job and sync run durations', async () => {
