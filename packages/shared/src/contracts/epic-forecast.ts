@@ -26,10 +26,10 @@ export const EpicForecastTargetSchema = z.object({
   jiraStoryCount: z.number().int().min(0).nullable(),
   manualStoryCount: z.number().int().min(1).nullable(),
   status: EpicForecastTargetStatusSchema,
-  closedAt: z.string().nullable(),
+  closedAt: z.string().datetime().nullable(),
   sortOrder: z.number().int(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
 });
 export type EpicForecastTarget = z.infer<typeof EpicForecastTargetSchema>;
 
