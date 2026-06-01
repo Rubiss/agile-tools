@@ -32,6 +32,37 @@ export interface MonteCarloForecastResult {
   warnings: ForecastWarning[];
 }
 
+export interface EpicForecastTargetInput {
+  id: string;
+  jiraIssueKey: string;
+  summary: string;
+  dueDate: string;
+  remainingStoryCount: number;
+  targetDays: number;
+}
+
+export interface EpicForecastResult {
+  targetId: string;
+  jiraIssueKey: string;
+  summary: string;
+  dueDate: string;
+  remainingStoryCount: number;
+  cumulativeStoryCount: number;
+  completionChance: number;
+}
+
+export interface EpicForecastInput {
+  historicalDailyThroughput: number[];
+  sampleSize: number;
+  targets: EpicForecastTargetInput[];
+  iterations?: number;
+}
+
+export interface EpicForecastSimulationResult {
+  results: EpicForecastResult[];
+  warnings: ForecastWarning[];
+}
+
 // ─── "When" forecast ──────────────────────────────────────────────────────────
 
 export interface WhenForecastInput {
@@ -171,6 +202,68 @@ export function runHowManyForecast(input: HowManyForecastInput): MonteCarloForec
   }));
 
   return { results, warnings };
+}
+
+// ─── Sequential epic forecast ────────────────────────────────────────────────
+
+/**
+ * Run an epic stack-rank simulation.
+ *
+ * Targets are evaluated in their provided order, which should already be due-date
+ * sorted. For each epic, prior epic story counts are treated as work that must
+ * finish first, so the completion chance is the probability that simulated
+ * throughput reaches the cumulative story count by that epic's due date.
+ */
+export function runEpicForecast(input: EpicForecastInput): EpicForecastSimulationResult {
+  const {
+    historicalDailyThroughput,
+    sampleSize,
+    targets,
+    iterations = DEFAULT_MONTE_CARLO_ITERATIONS,
+  } = input;
+  const warnings = buildWarnings(historicalDailyThroughput, sampleSize);
+  const hasPositiveThroughput = historicalDailyThroughput.some((v) => v > 0);
+
+  let cumulativeStoryCount = 0;
+  const results: EpicForecastResult[] = targets.map((target) => {
+    cumulativeStoryCount += target.remainingStoryCount;
+    return {
+      targetId: target.id,
+      jiraIssueKey: target.jiraIssueKey,
+      summary: target.summary,
+      dueDate: target.dueDate,
+      remainingStoryCount: target.remainingStoryCount,
+      cumulativeStoryCount,
+      completionChance: 0,
+    };
+  });
+
+  if (!hasPositiveThroughput || results.length === 0) {
+    return { results, warnings };
+  }
+
+  const successes = new Array(results.length).fill(0) as number[];
+
+  for (let i = 0; i < iterations; i++) {
+    for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
+      const target = targets[targetIndex]!;
+      let completed = 0;
+      for (let day = 0; day < target.targetDays; day++) {
+        completed += sampleDay(historicalDailyThroughput);
+      }
+      if (completed >= results[targetIndex]!.cumulativeStoryCount) {
+        successes[targetIndex] = successes[targetIndex]! + 1;
+      }
+    }
+  }
+
+  return {
+    results: results.map((result, index) => ({
+      ...result,
+      completionChance: Math.round((successes[index]! / iterations) * 1000) / 10,
+    })),
+    warnings,
+  };
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

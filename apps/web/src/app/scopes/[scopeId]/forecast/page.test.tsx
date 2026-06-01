@@ -12,6 +12,10 @@ vi.mock('next/navigation', () => ({
   useParams: useParamsMock,
 }));
 
+vi.mock('@/components/forecast/epic-forecast-panel', () => ({
+  EpicForecastPanel: () => <div data-testid="epic-forecast-panel" />,
+}));
+
 import ForecastPage from './page';
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {

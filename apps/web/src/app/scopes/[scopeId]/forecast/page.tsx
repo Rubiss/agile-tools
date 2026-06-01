@@ -15,6 +15,7 @@ import {
 import { ThroughputChart } from '@/components/forecast/throughput-chart';
 import { ForecastForm } from '@/components/forecast/forecast-form';
 import { ForecastResults } from '@/components/forecast/forecast-results';
+import { EpicForecastPanel } from '@/components/forecast/epic-forecast-panel';
 import { Breadcrumbs } from '@/components/app/breadcrumbs';
 import {
   heroCardStyle,
@@ -266,6 +267,23 @@ export default function ForecastPage() {
             <p style={{ margin: 0 }}>{forecastError}</p>
           </div>
         )}
+        </section>
+
+        <section style={sectionCardStyle}>
+          <div style={sectionHeaderRowStyle}>
+            <div>
+              <h2 style={sectionTitleStyle}>Epic stack rank</h2>
+              <p style={sectionCopyStyle}>
+                Track persisted epic targets and estimate each due-date commitment as sequential work against the same throughput sample.
+              </p>
+            </div>
+          </div>
+          <EpicForecastPanel
+            scopeId={scopeId}
+            sampleWindow={sampleWindow}
+            dataVersion={pinnedDataVersion ?? throughput?.dataVersion ?? null}
+            disabled={throughputLoading}
+          />
         </section>
 
         {forecastResponse && (

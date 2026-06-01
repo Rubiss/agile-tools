@@ -118,6 +118,7 @@ export async function seedLocalDemoWorkspace(): Promise<{ scopeId: string }> {
     });
 
     await tx.forecastResultCache.deleteMany({ where: { scopeId: LOCAL_DEMO_IDS.scopeId } });
+    await tx.epicForecastTarget.deleteMany({ where: { scopeId: LOCAL_DEMO_IDS.scopeId } });
     await tx.agingThresholdModel.deleteMany({ where: { scopeId: LOCAL_DEMO_IDS.scopeId } });
     await tx.holdDefinition.deleteMany({ where: { scopeId: LOCAL_DEMO_IDS.scopeId } });
     await tx.workItem.deleteMany({ where: { scopeId: LOCAL_DEMO_IDS.scopeId } });
@@ -166,6 +167,68 @@ export async function seedLocalDemoWorkspace(): Promise<{ scopeId: string }> {
         dataVersion: LOCAL_DEMO_IDS.syncRunId,
       },
     });
+
+    await tx.epicForecastTarget.createMany({
+      data: [
+        {
+          id: demoUuid(6001),
+          scopeId: LOCAL_DEMO_IDS.scopeId,
+          jiraIssueKey: 'AG-EPIC-1',
+          summary: 'Checkout reliability hardening',
+          dueDate: futureLocalDate(18),
+          remainingStoryCount: 8,
+          storyCountSource: 'epic_link',
+          epicLinkStoryCount: 8,
+          manualStoryCount: 10,
+          jiraStoryCount: 12,
+          status: 'active',
+          sortOrder: 1,
+        },
+        {
+          id: demoUuid(6002),
+          scopeId: LOCAL_DEMO_IDS.scopeId,
+          jiraIssueKey: 'AG-EPIC-2',
+          summary: 'Flow forecasting dashboard rollout',
+          dueDate: futureLocalDate(32),
+          remainingStoryCount: 28,
+          storyCountSource: 'jira_field',
+          epicLinkStoryCount: 24,
+          manualStoryCount: 26,
+          jiraStoryCount: 28,
+          status: 'active',
+          sortOrder: 2,
+        },
+        {
+          id: demoUuid(6003),
+          scopeId: LOCAL_DEMO_IDS.scopeId,
+          jiraIssueKey: 'AG-EPIC-3',
+          summary: 'Portfolio migration command center',
+          dueDate: futureLocalDate(45),
+          remainingStoryCount: 58,
+          storyCountSource: 'manual',
+          epicLinkStoryCount: 51,
+          manualStoryCount: 58,
+          jiraStoryCount: 55,
+          status: 'active',
+          sortOrder: 3,
+        },
+        {
+          id: demoUuid(6004),
+          scopeId: LOCAL_DEMO_IDS.scopeId,
+          jiraIssueKey: 'AG-EPIC-0',
+          summary: 'Legacy board clean-up',
+          dueDate: futureLocalDate(-8),
+          remainingStoryCount: 6,
+          storyCountSource: 'epic_link',
+          epicLinkStoryCount: 6,
+          manualStoryCount: 6,
+          jiraStoryCount: 7,
+          status: 'closed',
+          closedAt: daysAgo(5, 15),
+          sortOrder: 0,
+        },
+      ],
+    });
   });
 
   return { scopeId: LOCAL_DEMO_IDS.scopeId };
@@ -180,6 +243,12 @@ function daysAgo(days: number, hour = 12): Date {
   date.setHours(hour, 0, 0, 0);
   date.setDate(date.getDate() - days);
   return date;
+}
+
+function futureLocalDate(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function issueUrl(issueKey: string): string {

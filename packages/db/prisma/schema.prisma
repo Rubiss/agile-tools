@@ -110,6 +110,7 @@ model FlowScope {
   workItems       WorkItem[]
   agingModels     AgingThresholdModel[]
   forecastCache   ForecastResultCache[]
+  epicForecastTargets EpicForecastTarget[]
 
   @@index([workspaceId])
   @@index([connectionId])
@@ -311,4 +312,27 @@ model ForecastResultCache {
 
   @@unique([scopeId, requestHash, dataVersion])
   @@index([scopeId, dataVersion])
+}
+
+model EpicForecastTarget {
+  id                  String   @id @default(uuid())
+  scopeId             String
+  jiraIssueKey        String
+  summary             String
+  dueDate             String
+  remainingStoryCount Int
+  storyCountSource    String   @default("manual")
+  epicLinkStoryCount  Int?
+  jiraStoryCount      Int?
+  manualStoryCount    Int?
+  status              String   @default("active")
+  closedAt            DateTime?
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  scope FlowScope @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+
+  @@unique([scopeId, jiraIssueKey])
+  @@index([scopeId, status, dueDate])
 }
