@@ -67,8 +67,8 @@ export function ColumnAgingScatterPlot({
   }
 
   return (
-    <div style={{ height, overflowX: 'auto' }} aria-label="Column aging scatter plot">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Column aging scatter plot" style={{ minWidth: '48rem', width: '100%', height: '100%' }}>
+    <div style={{ height }} aria-label="Column aging scatter plot">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Column aging scatter plot" style={{ width: '100%', height: '100%' }}>
         <line
           x1={margin.left}
           x2={width - margin.right}

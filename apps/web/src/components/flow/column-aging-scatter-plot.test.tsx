@@ -113,6 +113,26 @@ describe('ColumnAgingScatterPlot', () => {
     expect(container.querySelectorAll('circle')).toHaveLength(0);
   });
 
+  it('does not force horizontal scrolling inside the chart', () => {
+    const { container } = render(
+      <ColumnAgingScatterPlot
+        viewModel={viewModel([
+          columnPoint({
+            workItemId: '11111111-1111-4111-8111-111111111111',
+            issueKey: 'AGILE-101',
+            currentColumn: 'Selected for Development',
+          }),
+        ])}
+      />,
+    );
+
+    const chartContainer = container.querySelector('div[aria-label="Column aging scatter plot"]');
+    const svg = container.querySelector('svg[aria-label="Column aging scatter plot"]');
+
+    expect(chartContainer).toHaveStyle({ overflowX: '' });
+    expect(svg).not.toHaveStyle({ minWidth: '48rem' });
+  });
+
   it('omits columns that do not currently contain active stories when requested', () => {
     render(
       <ColumnAgingScatterPlot
