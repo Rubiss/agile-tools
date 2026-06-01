@@ -43,7 +43,7 @@ export async function listEpicForecastTargets(
 ): Promise<EpicForecastTargetRow[]> {
   return db.epicForecastTarget.findMany({
     where: { scopeId },
-    orderBy: [{ status: 'asc' }, { dueDate: 'asc' }, { sortOrder: 'asc' }, { jiraIssueKey: 'asc' }],
+    orderBy: [{ status: 'asc' }, { sortOrder: 'asc' }, { dueDate: 'asc' }, { jiraIssueKey: 'asc' }],
   }) as Promise<EpicForecastTargetRow[]>;
 }
 
