@@ -11,6 +11,7 @@ import {
 import {
   formatDateInTimezone,
   getFlowScope,
+  getJiraConnection,
   getLastSucceededSyncRun,
   getPrismaClient,
   getSyncRunByDataVersion,
@@ -39,6 +40,10 @@ interface ProblemResponse {
   details?: string[];
 }
 
+function buildJiraIssueUrl(baseUrl: string, issueKey: string): string {
+  return `${baseUrl.replace(/\/$/, '')}/browse/${encodeURIComponent(issueKey)}`;
+}
+
 function serializeTarget(target: {
   id: string;
   scopeId: string;
@@ -55,12 +60,13 @@ function serializeTarget(target: {
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;
-}): EpicForecastTarget {
+}, jiraBaseUrl: string): EpicForecastTarget {
   return {
     id: target.id,
     scopeId: target.scopeId,
     jiraIssueKey: target.jiraIssueKey,
     summary: target.summary,
+    directUrl: buildJiraIssueUrl(jiraBaseUrl, target.jiraIssueKey),
     dueDate: target.dueDate,
     remainingStoryCount: target.remainingStoryCount,
     storyCountSource:
@@ -168,8 +174,12 @@ async function handleGET(
       return Response.json(dataVersionResult, { status: 404 });
     }
 
+    const connection = await getJiraConnection(db, ctx.workspaceId, scope.connectionId);
+    if (!connection) {
+      return Response.json({ code: 'NOT_FOUND', message: 'Jira connection not found.' }, { status: 404 });
+    }
     const targets = await listEpicForecastTargets(db, scopeId);
-    const serializedTargets = targets.map(serializeTarget);
+    const serializedTargets = targets.map((target) => serializeTarget(target, connection.baseUrl));
     const activeTargets = serializedTargets.filter((target) => target.status === 'active');
     const sampleWindow = resolveSampleWindow(
       {
@@ -211,6 +221,8 @@ async function handleGET(
       historicalDailyThroughput,
       sampleSize,
       iterations,
+      confidenceLevels: [50, 70, 85, 95],
+      timezone: scope.timezone,
       targets: activeTargets.map((target) => ({
         id: target.id,
         jiraIssueKey: target.jiraIssueKey,
@@ -289,9 +301,19 @@ async function handlePOST(
       );
     }
 
+    const jiraIssueKey = parsed.data.jiraIssueKey.toUpperCase();
+    const existingTargets = parsed.data.sortOrder === undefined
+      ? await listEpicForecastTargets(db, scopeId)
+      : [];
+    const existingTarget = existingTargets.find((target) => target.jiraIssueKey === jiraIssueKey);
+    const nextSortOrder =
+      Math.max(0, ...existingTargets.filter((target) => target.status === 'active').map((target) => target.sortOrder)) +
+      1;
+    const sortOrder = parsed.data.sortOrder ?? existingTarget?.sortOrder ?? nextSortOrder;
+
     const targetInput = {
       scopeId,
-      jiraIssueKey: parsed.data.jiraIssueKey.toUpperCase(),
+      jiraIssueKey,
       summary: parsed.data.summary,
       dueDate: parsed.data.dueDate,
       remainingStoryCount: parsed.data.remainingStoryCount,
@@ -301,15 +323,19 @@ async function handlePOST(
       ...(parsed.data.manualStoryCount !== undefined ? { manualStoryCount: parsed.data.manualStoryCount } : {}),
       ...(parsed.data.status !== undefined ? { status: parsed.data.status } : {}),
       ...(parsed.data.closedAt !== undefined ? { closedAt: parsed.data.closedAt ? new Date(parsed.data.closedAt) : null } : {}),
-      ...(parsed.data.sortOrder !== undefined ? { sortOrder: parsed.data.sortOrder } : {}),
+      sortOrder,
     };
+    const connection = await getJiraConnection(db, ctx.workspaceId, scope.connectionId);
+    if (!connection) {
+      return Response.json({ code: 'NOT_FOUND', message: 'Jira connection not found.' }, { status: 404 });
+    }
     const target = await upsertEpicForecastTarget(db, targetInput);
     logger.info('Epic forecast target saved', {
       scopeId,
       targetId: target.id,
       durationSeconds: metricsClock.durationSecondsSince(startedAt),
     });
-    return Response.json(serializeTarget(target), { status: 201 });
+    return Response.json(serializeTarget(target, connection.baseUrl), { status: 201 });
   } catch (err) {
     if (err instanceof ResponseError) {
       return err.response;

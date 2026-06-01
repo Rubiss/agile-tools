@@ -18,6 +18,7 @@ export const EpicForecastTargetSchema = z.object({
   scopeId: z.string().uuid(),
   jiraIssueKey: z.string(),
   summary: z.string(),
+  directUrl: z.string().url().nullable(),
   dueDate: LocalDateSchema,
   remainingStoryCount: z.number().int().min(1),
   storyCountSource: EpicStoryCountSourceSchema,
@@ -66,6 +67,10 @@ export const EpicForecastResultSchema = z.object({
   remainingStoryCount: z.number().int(),
   cumulativeStoryCount: z.number().int(),
   completionChance: z.number(),
+  completionDatePercentiles: z.array(z.object({
+    confidenceLevel: z.number().int(),
+    completionDate: LocalDateSchema.optional(),
+  })),
 });
 export type EpicForecastResult = z.infer<typeof EpicForecastResultSchema>;
 

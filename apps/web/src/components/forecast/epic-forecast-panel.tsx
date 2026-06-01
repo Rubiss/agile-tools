@@ -37,6 +37,15 @@ interface ProblemResponse {
   details?: string[];
 }
 
+interface EpicLookupResponse {
+  jiraIssueKey: string;
+  summary: string;
+  dueDate: string | null;
+  epicLinkStoryCount: number;
+  jiraStoryCount: number | null;
+  directUrl: string;
+}
+
 function getProblemMessage(problem: ProblemResponse | null, fallbackMessage: string): string {
   return problem?.details?.[0] ?? problem?.message ?? fallbackMessage;
 }
@@ -71,6 +80,8 @@ export function EpicForecastPanel({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lookupMessage, setLookupMessage] = useState<string | null>(null);
+  const [hoveredChanceTargetId, setHoveredChanceTargetId] = useState<string | null>(null);
   const [jiraIssueKey, setJiraIssueKey] = useState('');
   const [summary, setSummary] = useState('');
   const [dueDate, setDueDate] = useState(dateOffset(60));
@@ -150,6 +161,33 @@ export function EpicForecastPanel({
     }
   }
 
+  async function lookupEpic() {
+    const normalizedKey = jiraIssueKey.trim();
+    if (!normalizedKey) return;
+    setLookupMessage('Loading epic details from Jira...');
+    try {
+      const params = new URLSearchParams({ issueKey: normalizedKey });
+      const res = await fetch(`/api/v1/scopes/${scopeId}/epic-forecasts/lookup?${params.toString()}`);
+      const body = (await res.json().catch(() => null)) as EpicLookupResponse | ProblemResponse | null;
+      if (!res.ok) {
+        throw new Error(getProblemMessage(body as ProblemResponse | null, `HTTP ${res.status}`));
+      }
+      const epic = body as EpicLookupResponse;
+      setJiraIssueKey(epic.jiraIssueKey);
+      setSummary(epic.summary);
+      if (epic.dueDate) {
+        setDueDate(epic.dueDate);
+      }
+      setStoryCountSource('epic_link');
+      setRemainingStoryCount(Math.max(1, epic.epicLinkStoryCount));
+      setLookupMessage(
+        `Loaded summary${epic.dueDate ? ', due date' : ''}, and ${epic.epicLinkStoryCount} Epic Link ${epic.epicLinkStoryCount === 1 ? 'story' : 'stories'} from Jira.`,
+      );
+    } catch (err) {
+      setLookupMessage(err instanceof Error ? err.message : 'Failed to load epic details from Jira.');
+    }
+  }
+
   async function removeTarget(targetId: string) {
     setSaving(true);
     setError(null);
@@ -164,6 +202,37 @@ export function EpicForecastPanel({
       await loadEpicForecast();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove epic forecast target.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function moveTarget(resultIndex: number, direction: -1 | 1) {
+    if (!response) return;
+    const nextIndex = resultIndex + direction;
+    if (nextIndex < 0 || nextIndex >= activeResults.length) return;
+
+    const current = response.targets.find((target) => target.id === activeResults[resultIndex]!.targetId);
+    const next = response.targets.find((target) => target.id === activeResults[nextIndex]!.targetId);
+    if (!current || !next) return;
+
+    const reorderedResults = [...activeResults];
+    const [movedResult] = reorderedResults.splice(resultIndex, 1);
+    if (!movedResult) return;
+    reorderedResults.splice(nextIndex, 0, movedResult);
+
+    setSaving(true);
+    setError(null);
+    try {
+      await Promise.all(
+        reorderedResults.map((result, index) => {
+          const target = response.targets.find((candidate) => candidate.id === result.targetId);
+          return target ? saveTargetOrder(target, index + 1) : Promise.resolve();
+        }),
+      );
+      await loadEpicForecast();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reorder epics.');
     } finally {
       setSaving(false);
     }
@@ -185,6 +254,7 @@ export function EpicForecastPanel({
             <input
               value={jiraIssueKey}
               onChange={(e) => setJiraIssueKey(e.target.value)}
+              onBlur={() => { void lookupEpic(); }}
               disabled={busy}
               required
               placeholder="PROJ-123"
@@ -244,10 +314,16 @@ export function EpicForecastPanel({
             Save Epic
           </button>
           <p style={{ ...helperTextStyle, margin: 0 }}>
-            Standard Jira due date drives ordering. Story counts can come from a manual override, Epic Link children, or a Jira field.
+            Standard Jira due date is loaded when available. Use Up and Down to choose the active epic order.
           </p>
         </div>
       </form>
+
+      {lookupMessage && (
+        <div style={noticeStyle(lookupMessage.startsWith('Loaded') ? 'info' : 'warning')}>
+          <p style={{ margin: 0 }}>{lookupMessage}</p>
+        </div>
+      )}
 
       {loading && <p style={sectionCopyStyle}>Loading epic stack rank...</p>}
       {error && (
@@ -271,9 +347,10 @@ export function EpicForecastPanel({
 
       {response && activeResults.length > 0 ? (
         <div style={{ display: 'grid', gap: '0.85rem' }}>
-          {activeResults.map((result) => {
+          {activeResults.map((result, index) => {
             const tone = chanceTone(result.completionChance);
             const target = response.targets.find((candidate) => candidate.id === result.targetId);
+            const percentileSummary = formatPercentileSummary(result.completionDatePercentiles);
             return (
               <article
                 key={result.targetId}
@@ -286,7 +363,19 @@ export function EpicForecastPanel({
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ ...statLabelStyle, marginBottom: '0.35rem' }}>{result.jiraIssueKey}</p>
+                  <p style={{ ...statLabelStyle, marginBottom: '0.35rem' }}>
+                    {target?.directUrl ? (
+                      <a
+                        href={target.directUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'none' }}
+                        title={`Open ${result.jiraIssueKey} in Jira`}
+                      >
+                        {result.jiraIssueKey}
+                      </a>
+                    ) : result.jiraIssueKey}
+                  </p>
                   <p style={{ margin: 0, color: palette.ink, fontWeight: 700 }}>{result.summary}</p>
                 </div>
                 <div>
@@ -308,18 +397,67 @@ export function EpicForecastPanel({
                 </div>
                 <div>
                   <p style={statLabelStyle}>Chance</p>
-                  <p style={{ ...statValueStyle, color: palette[tone], fontSize: '1.35rem' }}>
+                  <p
+                    title={`Chance is the share of Monte Carlo simulations that complete cumulative stories by the due date.\n${percentileSummary}`}
+                    tabIndex={0}
+                    onFocus={() => setHoveredChanceTargetId(result.targetId)}
+                    onBlur={() => setHoveredChanceTargetId(null)}
+                    onMouseEnter={() => setHoveredChanceTargetId(result.targetId)}
+                    onMouseLeave={() => setHoveredChanceTargetId(null)}
+                    style={{ ...statValueStyle, color: palette[tone], fontSize: '1.35rem' }}
+                  >
                     {result.completionChance.toFixed(1)}%
                   </p>
                 </div>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => { void removeTarget(result.targetId); }}
-                  style={buttonStyle('secondary', busy)}
-                >
-                  Remove
-                </button>
+                <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    disabled={busy || index === 0}
+                    onClick={() => { void moveTarget(index, -1); }}
+                    style={buttonStyle('secondary', busy || index === 0)}
+                    title="Move epic earlier in the sequence"
+                  >
+                    Up
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || index === activeResults.length - 1}
+                    onClick={() => { void moveTarget(index, 1); }}
+                    style={buttonStyle('secondary', busy || index === activeResults.length - 1)}
+                    title="Move epic later in the sequence"
+                  >
+                    Down
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => { void removeTarget(result.targetId); }}
+                    style={buttonStyle('secondary', busy)}
+                  >
+                    Remove
+                  </button>
+                </div>
+                {hoveredChanceTargetId === result.targetId ? (
+                  <div
+                    role="tooltip"
+                    style={{
+                      gridColumn: '1 / -1',
+                      padding: '0.7rem',
+                      borderRadius: '0.5rem',
+                      border: `1px solid ${palette.line}`,
+                      background: palette.panel,
+                      boxShadow: '0 12px 28px rgba(15, 23, 42, 0.18)',
+                      color: palette.text,
+                      fontSize: '0.78rem',
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <strong style={{ color: palette.ink }}>
+                      Chance is the share of simulations completed by due date.
+                    </strong>
+                    <div style={{ marginTop: '0.35rem' }}>{percentileSummary}</div>
+                  </div>
+                ) : null}
               </article>
             );
           })}
@@ -357,7 +495,13 @@ export function EpicForecastPanel({
                   color: palette.muted,
                 }}
               >
-                <strong style={{ color: palette.text }}>{target.jiraIssueKey}</strong>
+                <strong style={{ color: palette.text }}>
+                  {target.directUrl ? (
+                    <a href={target.directUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>
+                      {target.jiraIssueKey}
+                    </a>
+                  ) : target.jiraIssueKey}
+                </strong>
                 <span>{target.summary}</span>
                 <span>{target.closedAt ? formatDueDate(target.closedAt.slice(0, 10)) : 'Closed'}</span>
               </div>
@@ -369,6 +513,30 @@ export function EpicForecastPanel({
   );
 }
 
+async function saveTargetOrder(target: EpicForecastTarget, sortOrder: number): Promise<void> {
+  const res = await fetch(`/api/v1/scopes/${target.scopeId}/epic-forecasts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jiraIssueKey: target.jiraIssueKey,
+      summary: target.summary,
+      dueDate: target.dueDate,
+      remainingStoryCount: target.remainingStoryCount,
+      storyCountSource: target.storyCountSource,
+      epicLinkStoryCount: target.epicLinkStoryCount,
+      jiraStoryCount: target.jiraStoryCount,
+      manualStoryCount: target.manualStoryCount,
+      status: target.status,
+      closedAt: target.closedAt,
+      sortOrder,
+    }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as ProblemResponse | null;
+    throw new Error(getProblemMessage(body, `HTTP ${res.status}`));
+  }
+}
+
 function formatStorySource(target: EpicForecastTarget): string {
   if (target.storyCountSource === 'epic_link') {
     return `Epic Link children: ${target.epicLinkStoryCount ?? target.remainingStoryCount}`;
@@ -377,4 +545,19 @@ function formatStorySource(target: EpicForecastTarget): string {
     return `Jira field: ${target.jiraStoryCount ?? target.remainingStoryCount}`;
   }
   return `Manual override: ${target.manualStoryCount ?? target.remainingStoryCount}`;
+}
+
+function formatPercentileSummary(
+  percentiles?: Array<{ confidenceLevel: number; completionDate?: string | undefined }>,
+): string {
+  if (!percentiles || percentiles.length === 0) {
+    return 'Completion date percentiles are not available.';
+  }
+  return `Completion date percentiles: ${percentiles
+    .map((percentile) =>
+      percentile.completionDate
+        ? `p${percentile.confidenceLevel}: ${formatDueDate(percentile.completionDate)}`
+        : `p${percentile.confidenceLevel}: unavailable`,
+    )
+    .join(', ')}`;
 }

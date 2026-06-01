@@ -49,12 +49,16 @@ export interface EpicForecastResult {
   remainingStoryCount: number;
   cumulativeStoryCount: number;
   completionChance: number;
+  completionDatePercentiles: Array<{ confidenceLevel: number; completionDate?: string }>;
 }
 
 export interface EpicForecastInput {
   historicalDailyThroughput: number[];
   sampleSize: number;
   targets: EpicForecastTargetInput[];
+  confidenceLevels?: number[];
+  referenceDate?: Date;
+  timezone?: string;
   iterations?: number;
 }
 
@@ -209,8 +213,8 @@ export function runHowManyForecast(input: HowManyForecastInput): MonteCarloForec
 /**
  * Run an epic stack-rank simulation.
  *
- * Targets are evaluated in their provided order, which should already be due-date
- * sorted. For each epic, prior epic story counts are treated as work that must
+ * Targets are evaluated in their provided order. For each epic, prior epic story
+ * counts are treated as work that must
  * finish first, so the completion chance is the probability that simulated
  * throughput reaches the cumulative story count by that epic's due date.
  */
@@ -219,6 +223,9 @@ export function runEpicForecast(input: EpicForecastInput): EpicForecastSimulatio
     historicalDailyThroughput,
     sampleSize,
     targets,
+    confidenceLevels = [50, 70, 85, 95],
+    referenceDate = new Date(),
+    timezone = 'UTC',
     iterations = DEFAULT_MONTE_CARLO_ITERATIONS,
   } = input;
   const warnings = buildWarnings(historicalDailyThroughput, sampleSize);
@@ -235,6 +242,7 @@ export function runEpicForecast(input: EpicForecastInput): EpicForecastSimulatio
       remainingStoryCount: target.remainingStoryCount,
       cumulativeStoryCount,
       completionChance: 0,
+      completionDatePercentiles: confidenceLevels.map((confidenceLevel) => ({ confidenceLevel })),
     };
   });
 
@@ -243,25 +251,42 @@ export function runEpicForecast(input: EpicForecastInput): EpicForecastSimulatio
   }
 
   const successes = new Array(results.length).fill(0) as number[];
+  const completionDaysByTarget = results.map(() => [] as number[]);
 
   for (let i = 0; i < iterations; i++) {
     for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
       const target = targets[targetIndex]!;
       let completed = 0;
-      for (let day = 0; day < target.targetDays; day++) {
+      let days = 0;
+      const maxDays = Math.max(results[targetIndex]!.cumulativeStoryCount * 365, 3650);
+      while (completed < results[targetIndex]!.cumulativeStoryCount && days < maxDays) {
         completed += sampleDay(historicalDailyThroughput);
+        days += 1;
       }
-      if (completed >= results[targetIndex]!.cumulativeStoryCount) {
+      completionDaysByTarget[targetIndex]!.push(days);
+      if (completed >= results[targetIndex]!.cumulativeStoryCount && days <= target.targetDays) {
         successes[targetIndex] = successes[targetIndex]! + 1;
       }
     }
   }
 
   return {
-    results: results.map((result, index) => ({
-      ...result,
-      completionChance: Math.round((successes[index]! / iterations) * 1000) / 10,
-    })),
+    results: results.map((result, index) => {
+      const completionDays = completionDaysByTarget[index]!;
+      completionDays.sort((a, b) => a - b);
+      return {
+        ...result,
+        completionChance: Math.round((successes[index]! / iterations) * 1000) / 10,
+        completionDatePercentiles: confidenceLevels.map((confidenceLevel) => ({
+          confidenceLevel,
+          completionDate: addWorkingDaysToDate(
+            referenceDate,
+            nearestRankPercentile(completionDays, confidenceLevel),
+            timezone,
+          ),
+        })),
+      };
+    }),
     warnings,
   };
 }
