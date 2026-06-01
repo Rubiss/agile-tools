@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import {
   appendSampleWindowSearchParams,
   formatSampleWindowLabel,
@@ -82,6 +82,8 @@ export function EpicForecastPanel({
   const [error, setError] = useState<string | null>(null);
   const [lookupMessage, setLookupMessage] = useState<string | null>(null);
   const [hoveredChanceTargetId, setHoveredChanceTargetId] = useState<string | null>(null);
+  const [draggedTargetId, setDraggedTargetId] = useState<string | null>(null);
+  const [dragOverTargetId, setDragOverTargetId] = useState<string | null>(null);
   const [jiraIssueKey, setJiraIssueKey] = useState('');
   const [summary, setSummary] = useState('');
   const [dueDate, setDueDate] = useState(dateOffset(60));
@@ -207,19 +209,18 @@ export function EpicForecastPanel({
     }
   }
 
-  async function moveTarget(resultIndex: number, direction: -1 | 1) {
+  async function reorderTarget(sourceTargetId: string, destinationTargetId: string) {
     if (!response) return;
-    const nextIndex = resultIndex + direction;
-    if (nextIndex < 0 || nextIndex >= activeResults.length) return;
-
-    const current = response.targets.find((target) => target.id === activeResults[resultIndex]!.targetId);
-    const next = response.targets.find((target) => target.id === activeResults[nextIndex]!.targetId);
-    if (!current || !next) return;
+    if (sourceTargetId === destinationTargetId) return;
 
     const reorderedResults = [...activeResults];
-    const [movedResult] = reorderedResults.splice(resultIndex, 1);
+    const sourceIndex = reorderedResults.findIndex((result) => result.targetId === sourceTargetId);
+    const destinationIndex = reorderedResults.findIndex((result) => result.targetId === destinationTargetId);
+    if (sourceIndex === -1 || destinationIndex === -1) return;
+
+    const [movedResult] = reorderedResults.splice(sourceIndex, 1);
     if (!movedResult) return;
-    reorderedResults.splice(nextIndex, 0, movedResult);
+    reorderedResults.splice(destinationIndex, 0, movedResult);
 
     setSaving(true);
     setError(null);
@@ -314,7 +315,7 @@ export function EpicForecastPanel({
             Save Epic
           </button>
           <p style={{ ...helperTextStyle, margin: 0 }}>
-            Standard Jira due date is loaded when available. Use Up and Down to choose the active epic order.
+            Standard Jira due date is loaded when available. Drag active epics by the handle to choose the order.
           </p>
         </div>
       </form>
@@ -347,21 +348,81 @@ export function EpicForecastPanel({
 
       {response && activeResults.length > 0 ? (
         <div style={{ display: 'grid', gap: '0.85rem' }}>
-          {activeResults.map((result, index) => {
+          {activeResults.map((result) => {
             const tone = chanceTone(result.completionChance);
             const target = response.targets.find((candidate) => candidate.id === result.targetId);
             const percentileSummary = formatPercentileSummary(result.completionDatePercentiles);
             return (
               <article
                 key={result.targetId}
+                onDragOver={(event) => {
+                  if (busy || !draggedTargetId) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'move';
+                  setDragOverTargetId(result.targetId);
+                }}
+                onDragLeave={() => {
+                  if (dragOverTargetId === result.targetId) {
+                    setDragOverTargetId(null);
+                  }
+                }}
+                onPointerEnter={() => {
+                  if (!busy && draggedTargetId && draggedTargetId !== result.targetId) {
+                    setDragOverTargetId(result.targetId);
+                  }
+                }}
+                onPointerUp={() => {
+                  const sourceTargetId = draggedTargetId;
+                  setDraggedTargetId(null);
+                  setDragOverTargetId(null);
+                  if (sourceTargetId) {
+                    void reorderTarget(sourceTargetId, result.targetId);
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const sourceTargetId = event.dataTransfer.getData('text/plain') || draggedTargetId;
+                  setDraggedTargetId(null);
+                  setDragOverTargetId(null);
+                  if (sourceTargetId) {
+                    void reorderTarget(sourceTargetId, result.targetId);
+                  }
+                }}
                 style={{
                   ...statCardStyle,
                   display: 'grid',
                   gap: '0.9rem',
-                  gridTemplateColumns: 'minmax(0, 1.2fr) repeat(3, minmax(110px, 0.35fr)) auto',
+                  gridTemplateColumns: '2.5rem minmax(0, 1.2fr) repeat(3, minmax(110px, 0.35fr)) 2.5rem',
                   alignItems: 'center',
+                  outline: dragOverTargetId === result.targetId ? `2px solid ${palette.accentStrong}` : undefined,
+                  opacity: draggedTargetId === result.targetId ? 0.72 : 1,
                 }}
               >
+                <div
+                  role="button"
+                  tabIndex={busy ? -1 : 0}
+                  draggable={!busy}
+                  aria-disabled={busy}
+                  aria-label={`Drag ${result.jiraIssueKey} to reorder`}
+                  title={`Drag ${result.jiraIssueKey} to reorder`}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', result.targetId);
+                    setDraggedTargetId(result.targetId);
+                  }}
+                  onPointerDown={() => {
+                    if (!busy) {
+                      setDraggedTargetId(result.targetId);
+                    }
+                  }}
+                  onDragEnd={() => {
+                    setDraggedTargetId(null);
+                    setDragOverTargetId(null);
+                  }}
+                  style={dragHandleButtonStyle(busy)}
+                >
+                  <DragGripIcon />
+                </div>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ ...statLabelStyle, marginBottom: '0.35rem' }}>
                     {target?.directUrl ? (
@@ -369,10 +430,10 @@ export function EpicForecastPanel({
                         href={target.directUrl}
                         target="_blank"
                         rel="noreferrer"
-                        style={{ color: 'inherit', textDecoration: 'none' }}
+                        style={activeEpicLinkStyle}
                         title={`Open ${result.jiraIssueKey} in Jira`}
                       >
-                        {result.jiraIssueKey}
+                        {result.jiraIssueKey} ↗
                       </a>
                     ) : result.jiraIssueKey}
                   </p>
@@ -409,32 +470,16 @@ export function EpicForecastPanel({
                     {result.completionChance.toFixed(1)}%
                   </p>
                 </div>
-                <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  <button
-                    type="button"
-                    disabled={busy || index === 0}
-                    onClick={() => { void moveTarget(index, -1); }}
-                    style={buttonStyle('secondary', busy || index === 0)}
-                    title="Move epic earlier in the sequence"
-                  >
-                    Up
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || index === activeResults.length - 1}
-                    onClick={() => { void moveTarget(index, 1); }}
-                    style={buttonStyle('secondary', busy || index === activeResults.length - 1)}
-                    title="Move epic later in the sequence"
-                  >
-                    Down
-                  </button>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => { void removeTarget(result.targetId); }}
-                    style={buttonStyle('secondary', busy)}
+                    style={iconButtonStyle(busy)}
+                    aria-label={`Remove ${result.jiraIssueKey}`}
+                    title={`Remove ${result.jiraIssueKey}`}
                   >
-                    Remove
+                    ×
                   </button>
                 </div>
                 {hoveredChanceTargetId === result.targetId ? (
@@ -497,8 +542,8 @@ export function EpicForecastPanel({
               >
                 <strong style={{ color: palette.text }}>
                   {target.directUrl ? (
-                    <a href={target.directUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>
-                      {target.jiraIssueKey}
+                    <a href={target.directUrl} target="_blank" rel="noreferrer" style={activeEpicLinkStyle}>
+                      {target.jiraIssueKey} ↗
                     </a>
                   ) : target.jiraIssueKey}
                 </strong>
@@ -560,4 +605,72 @@ function formatPercentileSummary(
         : `p${percentile.confidenceLevel}: unavailable`,
     )
     .join(', ')}`;
+}
+
+const activeEpicLinkStyle: CSSProperties = {
+  color: palette.accentStrong,
+  textDecoration: 'underline',
+  textDecorationThickness: '2px',
+  textUnderlineOffset: '0.22rem',
+};
+
+function dragHandleButtonStyle(disabled: boolean): CSSProperties {
+  return {
+    width: '2.25rem',
+    height: '2.25rem',
+    display: 'inline-grid',
+    placeItems: 'center',
+    borderRadius: '0.5rem',
+    border: `1px solid ${palette.line}`,
+    background: disabled ? palette.buttonDisabled : palette.panelAlt,
+    color: disabled ? palette.buttonDisabledText : palette.soft,
+    cursor: disabled ? 'not-allowed' : 'grab',
+    padding: 0,
+    userSelect: 'none',
+    touchAction: 'none',
+  };
+}
+
+function iconButtonStyle(disabled: boolean): CSSProperties {
+  return {
+    width: '2.25rem',
+    height: '2.25rem',
+    display: 'inline-grid',
+    placeItems: 'center',
+    borderRadius: '999px',
+    border: `1px solid ${disabled ? palette.line : palette.danger}`,
+    background: disabled ? palette.buttonDisabled : palette.dangerSoft,
+    color: disabled ? palette.buttonDisabledText : palette.danger,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    padding: 0,
+    fontSize: '1.15rem',
+    fontWeight: 800,
+    lineHeight: 1,
+  };
+}
+
+function DragGripIcon() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 0.24rem)',
+        gridTemplateRows: 'repeat(3, 0.24rem)',
+        gap: '0.16rem',
+      }}
+    >
+      {Array.from({ length: 6 }).map((_, index) => (
+        <span
+          key={index}
+          style={{
+            width: '0.24rem',
+            height: '0.24rem',
+            borderRadius: '999px',
+            background: 'currentColor',
+          }}
+        />
+      ))}
+    </span>
+  );
 }
