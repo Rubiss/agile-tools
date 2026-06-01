@@ -2,6 +2,7 @@ import type { PrismaClient } from '@agile-tools/db';
 import {
   buildAgingThresholdModel,
   buildColumnDurationsForItem,
+  parseBoardColumnMappings,
   type AgingThresholdResult,
   type BoardColumnMapping,
 } from '@agile-tools/analytics';
@@ -158,16 +159,16 @@ function buildColumnAgingModels({
     });
 
     for (const duration of columnDurations) {
-      if (duration.workingDays <= 0) continue;
-      const existing = samplesByColumn.get(duration.columnName);
-      if (existing) {
-        existing.samples.push(duration.workingDays);
-      } else {
-        samplesByColumn.set(duration.columnName, {
+      let bucket = samplesByColumn.get(duration.columnName);
+      if (!bucket) {
+        bucket = {
           column: { name: duration.columnName, statusIds: duration.statusIds },
-          samples: [duration.workingDays],
-        });
+          samples: [],
+        };
+        samplesByColumn.set(duration.columnName, bucket);
       }
+      if (duration.workingDays <= 0) continue;
+      bucket.samples.push(duration.workingDays);
     }
   }
 
@@ -188,19 +189,4 @@ function buildColumnAgingModels({
       ...(model.lowConfidenceReason ? { lowConfidenceReason: model.lowConfidenceReason } : {}),
     };
   });
-}
-
-function parseBoardColumnMappings(value: unknown): BoardColumnMapping[] {
-  if (!Array.isArray(value)) return [];
-  const columns: BoardColumnMapping[] = [];
-
-  for (const entry of value) {
-    if (!entry || typeof entry !== 'object') continue;
-    const candidate = entry as { name?: unknown; statusIds?: unknown };
-    if (typeof candidate.name !== 'string' || !Array.isArray(candidate.statusIds)) continue;
-    const statusIds = candidate.statusIds.filter((statusId): statusId is string => typeof statusId === 'string');
-    columns.push({ name: candidate.name, statusIds });
-  }
-
-  return columns;
 }

@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import {
   buildColumnDurationsForItem,
+  parseBoardColumnMappings,
   type BoardColumnMapping,
   type ColumnDurationResult,
 } from '@agile-tools/analytics';
@@ -333,19 +334,4 @@ function classifyAgingZone(
   if (ageDays > thresholds.p85) return 'aging';
   if (ageDays > thresholds.p50) return 'watch';
   return 'normal';
-}
-
-function parseBoardColumnMappings(value: unknown): BoardColumnMapping[] {
-  if (!Array.isArray(value)) return [];
-  const columns: BoardColumnMapping[] = [];
-
-  for (const entry of value) {
-    if (!entry || typeof entry !== 'object') continue;
-    const candidate = entry as { name?: unknown; statusIds?: unknown };
-    if (typeof candidate.name !== 'string' || !Array.isArray(candidate.statusIds)) continue;
-    const statusIds = candidate.statusIds.filter((statusId): statusId is string => typeof statusId === 'string');
-    columns.push({ name: candidate.name, statusIds });
-  }
-
-  return columns;
 }

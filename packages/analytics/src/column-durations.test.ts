@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildColumnDurationsForItem, type BoardColumnMapping } from './column-durations.js';
+import { buildColumnDurationsForItem, parseBoardColumnMappings, type BoardColumnMapping } from './column-durations.js';
 
 const timezone = 'UTC';
 const columns: BoardColumnMapping[] = [
@@ -132,5 +132,18 @@ describe('buildColumnDurationsForItem', () => {
       }),
     ]);
     expect(result.currentColumnDwell).toEqual(expect.objectContaining({ columnName: 'Uncategorized', workingDays: 2 }));
+  });
+});
+
+describe('parseBoardColumnMappings', () => {
+  it('keeps valid board column mappings and drops malformed entries', () => {
+    expect(
+      parseBoardColumnMappings([
+        { name: 'To Do', statusIds: ['todo', 12, 'triage'] },
+        { name: 42, statusIds: ['ignored'] },
+        { name: 'No statuses', statusIds: 'todo' },
+        null,
+      ]),
+    ).toEqual([{ name: 'To Do', statusIds: ['todo', 'triage'] }]);
   });
 });

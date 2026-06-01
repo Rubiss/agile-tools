@@ -142,4 +142,60 @@ describe('rebuildCurrentFlowProjection', () => {
       }),
     );
   });
+
+  it('persists observed unmapped columns even when their dwell samples net to zero working days', async () => {
+    const now = new Date('2026-06-02T12:00:00.000Z');
+    vi.spyOn(Date, 'now').mockReturnValue(now.getTime());
+
+    const db = {
+      flowScope: {
+        findUnique: vi.fn().mockResolvedValue({ timezone: 'UTC' }),
+      },
+      boardSnapshot: {
+        findFirst: vi.fn().mockResolvedValue({
+          columns: [{ name: 'To Do', statusIds: ['todo'] }],
+        }),
+      },
+      workItem: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            createdAt: new Date('2026-05-30T00:00:00.000Z'),
+            startedAt: new Date('2026-05-30T00:00:00.000Z'),
+            completedAt: new Date('2026-05-31T00:00:00.000Z'),
+            currentStatusId: 'unmapped-status',
+            lifecycleEvents: [],
+            holdPeriods: [],
+          },
+        ]),
+      },
+      agingThresholdModel: {
+        create: vi.fn().mockResolvedValue({}),
+      },
+    };
+
+    await rebuildCurrentFlowProjection(
+      db as unknown as Parameters<typeof rebuildCurrentFlowProjection>[0],
+      'scope-1',
+      'sync-run-2',
+      { historicalWindowDays: 90 },
+    );
+
+    expect(db.agingThresholdModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          columnThresholds: expect.arrayContaining([
+            expect.objectContaining({
+              columnName: 'Uncategorized',
+              statusIds: ['unmapped-status'],
+              metricBasis: 'column_working_days',
+              sampleSize: 0,
+              p50: 0,
+              p70: 0,
+              p85: 0,
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
 });

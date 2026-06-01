@@ -42,7 +42,22 @@ interface ColumnVisit {
   endedAt: Date;
 }
 
-const UNCATEGORIZED_COLUMN = 'Uncategorized';
+export const UNCATEGORIZED_COLUMN = 'Uncategorized';
+
+export function parseBoardColumnMappings(value: unknown): BoardColumnMapping[] {
+  if (!Array.isArray(value)) return [];
+  const columns: BoardColumnMapping[] = [];
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const candidate = entry as { name?: unknown; statusIds?: unknown };
+    if (typeof candidate.name !== 'string' || !Array.isArray(candidate.statusIds)) continue;
+    const statusIds = candidate.statusIds.filter((statusId): statusId is string => typeof statusId === 'string');
+    columns.push({ name: candidate.name, statusIds });
+  }
+
+  return columns;
+}
 
 export function buildColumnDurationsForItem({
   createdAt,
