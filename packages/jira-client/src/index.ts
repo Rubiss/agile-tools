@@ -1,5 +1,16 @@
-export { JiraClient, JiraClientError, createJiraClient } from './client.js';
-export type { JiraServerInfo, FetchOptions } from './client.js';
+export {
+  JiraClient,
+  JiraClientError,
+  createJiraClient,
+  inferChangelogFetchStrategyFromServerInfo,
+  normalizeChangelogFetchStrategy,
+} from './client.js';
+export type {
+  JiraChangelogFetchStrategy,
+  JiraClientOptions,
+  JiraServerInfo,
+  FetchOptions,
+} from './client.js';
 
 export { listBoards, getBoardDetail, getBoardDetailWithFilterId, getBoardFilterId } from './discovery.js';
 

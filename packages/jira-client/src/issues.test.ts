@@ -53,7 +53,9 @@ describe('fetchIssueChangelog', () => {
       );
     vi.stubGlobal('fetch', fetchMock);
 
-    const client = createJiraClient('https://jira.example.internal', 'pat-123');
+    const client = createJiraClient('https://jira.example.internal', 'pat-123', {
+      changelogFetchStrategy: 'subresource',
+    });
     const histories = await fetchIssueChangelog(client, 'PROJ-1');
 
     expect(histories).toHaveLength(101);
@@ -71,7 +73,7 @@ describe('fetchIssueChangelog', () => {
     );
   });
 
-  it('falls back to issue expansion when the changelog subresource returns 404', async () => {
+  it('falls back to issue expansion when the changelog subresource probe returns 404', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response('not found', { status: 404 }))
@@ -104,7 +106,7 @@ describe('fetchIssueChangelog', () => {
     expect(histories.map((history) => history.id)).toEqual(['cl-1', 'cl-2']);
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      'https://jira.example.internal/rest/api/2/issue/PROJ-1/changelog?startAt=0&maxResults=100',
+      'https://jira.example.internal/rest/api/2/issue/PROJ-1/changelog?startAt=0&maxResults=1',
       expect.any(Object),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -112,6 +114,94 @@ describe('fetchIssueChangelog', () => {
       'https://jira.example.internal/rest/api/2/issue/PROJ-1?expand=changelog&fields=summary',
       expect.any(Object),
     );
+  });
+
+  it('reuses issue expansion after detecting the changelog subresource is unavailable', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('not found', { status: 404 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          changelog: {
+            startAt: 0,
+            maxResults: 1,
+            total: 1,
+            histories: [
+              {
+                id: 'cl-1',
+                created: '2026-01-02T00:00:00.000Z',
+                items: [{ field: 'status', from: '1', to: '2' }],
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          changelog: {
+            startAt: 0,
+            maxResults: 1,
+            total: 1,
+            histories: [
+              {
+                id: 'cl-2',
+                created: '2026-01-03T00:00:00.000Z',
+                items: [{ field: 'status', from: '2', to: '3' }],
+              },
+            ],
+          },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createJiraClient('https://jira.example.internal', 'pat-123');
+
+    await expect(fetchIssueChangelog(client, 'PROJ-1')).resolves.toHaveLength(1);
+    await expect(fetchIssueChangelog(client, 'PROJ-2')).resolves.toHaveLength(1);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'https://jira.example.internal/rest/api/2/issue/PROJ-2?expand=changelog&fields=summary',
+      expect.any(Object),
+    );
+  });
+
+  it('uses a single changelog availability probe for concurrent fallback calls', async () => {
+    const fetchMock = vi.fn((input: string | URL) => {
+      const url = String(input);
+      if (url.includes('/changelog')) {
+        return Promise.resolve(new Response('not found', { status: 404 }));
+      }
+      return Promise.resolve(
+        jsonResponse({
+          changelog: {
+            startAt: 0,
+            maxResults: 0,
+            total: 0,
+            histories: [],
+          },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createJiraClient('https://jira.example.internal', 'pat-123');
+
+    await Promise.all([
+      fetchIssueChangelog(client, 'PROJ-1'),
+      fetchIssueChangelog(client, 'PROJ-2'),
+      fetchIssueChangelog(client, 'PROJ-3'),
+    ]);
+
+    const changelogCalls = fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes('/changelog'),
+    );
+    const issueDetailCalls = fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes('expand=changelog'),
+    );
+    expect(changelogCalls).toHaveLength(1);
+    expect(issueDetailCalls).toHaveLength(3);
   });
 });
 

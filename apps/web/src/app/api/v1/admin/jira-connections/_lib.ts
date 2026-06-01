@@ -1,7 +1,13 @@
 import type { JiraConnection as ApiConnection } from '@agile-tools/shared/contracts/api';
 import { getPrismaClient, getJiraConnection } from '@agile-tools/db';
 import { decryptSecret, getConfig } from '@agile-tools/shared';
-import { createJiraClient, JiraClientError, type JiraClient } from '@agile-tools/jira-client';
+import {
+  createJiraClient,
+  inferChangelogFetchStrategyFromServerInfo,
+  JiraClientError,
+  normalizeChangelogFetchStrategy,
+  type JiraClient,
+} from '@agile-tools/jira-client';
 import { ResponseError } from '@/server/errors';
 
 /** The Prisma JiraConnection record shape, inferred from the repository. */
@@ -50,10 +56,24 @@ export async function requireJiraConnection(
 export function createClientForConnection(conn: {
   baseUrl: string;
   encryptedSecretRef: string;
+  jiraVersion?: string | null;
+  jiraDeploymentType?: string | null;
+  changelogStrategy?: string | null;
 }): JiraClient {
   const { ENCRYPTION_KEY } = getConfig();
   const pat = decryptSecret(conn.encryptedSecretRef, ENCRYPTION_KEY);
-  return createJiraClient(conn.baseUrl, pat);
+  const changelogFetchStrategy =
+    normalizeChangelogFetchStrategy(conn.changelogStrategy) ??
+    (conn.jiraVersion && conn.jiraDeploymentType
+      ? inferChangelogFetchStrategyFromServerInfo({
+          version: conn.jiraVersion,
+          deploymentType: conn.jiraDeploymentType,
+        })
+      : undefined);
+
+  return createJiraClient(conn.baseUrl, pat, {
+    ...(changelogFetchStrategy !== undefined ? { changelogFetchStrategy } : {}),
+  });
 }
 
 /**

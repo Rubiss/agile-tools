@@ -1,5 +1,8 @@
 import type { PrismaClient } from '@agile-tools/db';
-import { DEFAULT_COMPLETED_WINDOW_DAYS } from '@agile-tools/db';
+import {
+  DEFAULT_COMPLETED_WINDOW_DAYS,
+  updateJiraConnectionCapabilities,
+} from '@agile-tools/db';
 import {
   getConfig,
   decryptSecret,
@@ -7,16 +10,17 @@ import {
   metricsClock,
   recordSyncRun,
 } from '@agile-tools/shared';
-import type { JiraClient } from '@agile-tools/jira-client';
 import {
   JiraClientError,
   createJiraClient,
+  inferChangelogFetchStrategyFromServerInfo,
   getBoardDetailWithFilterId,
+  normalizeChangelogFetchStrategy,
   streamBoardIssues,
   streamJqlIssues,
   fetchIssueChangelog,
 } from '@agile-tools/jira-client';
-import type { RawJiraIssue } from '@agile-tools/jira-client';
+import type { JiraClient, JiraChangelogFetchStrategy, RawJiraIssue } from '@agile-tools/jira-client';
 import { detectBoardDrift, applyBoardDriftHandling } from './detect-board-drift.js';
 import { updateConnectionHealthAfterSync } from './update-connection-health.js';
 import {
@@ -29,6 +33,14 @@ import { rebuildScopeProjections } from '../projections/rebuild-scope-summary.js
 const BATCH_SIZE = 10;
 const STAGED_ITEM_PAGE_SIZE = 100;
 const COMPLETED_ISSUE_SEARCH_FIELDS = 'summary,status,issuetype,project,created,assignee';
+
+interface JiraConnectionCapabilityFields {
+  id: string;
+  workspaceId: string;
+  jiraVersion?: string | null;
+  jiraDeploymentType?: string | null;
+  changelogStrategy?: string | null;
+}
 
 class SyncError extends Error {
   constructor(
@@ -198,7 +210,18 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
 
     const { ENCRYPTION_KEY } = getConfig();
     const pat = decryptSecret(connection.encryptedSecretRef, ENCRYPTION_KEY);
-    const jiraClient = createJiraClient(connection.baseUrl, pat);
+    const initialChangelogStrategy = getInitialChangelogFetchStrategy(connection);
+    const jiraClient = createJiraClient(connection.baseUrl, pat, {
+      ...(initialChangelogStrategy !== undefined
+        ? { changelogFetchStrategy: initialChangelogStrategy }
+        : {}),
+      onChangelogFetchStrategyDetected: (strategy) =>
+        persistChangelogStrategy(db, connection, strategy),
+    });
+    if (initialChangelogStrategy && connection.changelogStrategy == null) {
+      void persistChangelogStrategy(db, connection, initialChangelogStrategy);
+    }
+    await ensureJiraServerCapabilities(db, jiraClient, connection, syncRunId);
 
     const boardId = Number(scope.boardId);
     const { detail: boardDetail, filterId: boardFilterId } = await getBoardDetailWithFilterId(
@@ -430,6 +453,69 @@ export async function runScopeSync(db: PrismaClient, syncRunId: string): Promise
     logger.error('Scope sync failed', { syncRunId, errorCode, errorSummary });
     recordSyncMetric('failed', errorCode);
     throw err;
+  }
+}
+
+function getInitialChangelogFetchStrategy(
+  connection: JiraConnectionCapabilityFields,
+): JiraChangelogFetchStrategy | undefined {
+  return (
+    normalizeChangelogFetchStrategy(connection.changelogStrategy) ??
+    (connection.jiraVersion && connection.jiraDeploymentType
+      ? inferChangelogFetchStrategyFromServerInfo({
+          version: connection.jiraVersion,
+          deploymentType: connection.jiraDeploymentType,
+        })
+      : undefined)
+  );
+}
+
+async function persistChangelogStrategy(
+  db: PrismaClient,
+  connection: JiraConnectionCapabilityFields,
+  strategy: JiraChangelogFetchStrategy,
+): Promise<void> {
+  await updateJiraConnectionCapabilities(db, connection.workspaceId, connection.id, {
+    changelogStrategy: strategy,
+    capabilitiesDetectedAt: new Date(),
+  }).catch((err: unknown) => {
+    logger.warn('Failed to persist Jira changelog capability', {
+      connectionId: connection.id,
+      strategy,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+}
+
+async function ensureJiraServerCapabilities(
+  db: PrismaClient,
+  jiraClient: JiraClient,
+  connection: JiraConnectionCapabilityFields,
+  syncRunId: string,
+): Promise<void> {
+  if (connection.jiraVersion && connection.jiraDeploymentType) {
+    return;
+  }
+
+  try {
+    const serverInfo = await jiraClient.fetchServerInfo();
+    const changelogStrategy = inferChangelogFetchStrategyFromServerInfo(serverInfo);
+    if (changelogStrategy) {
+      jiraClient.setChangelogFetchStrategy(changelogStrategy);
+    }
+
+    await updateJiraConnectionCapabilities(db, connection.workspaceId, connection.id, {
+      jiraVersion: serverInfo.version,
+      jiraDeploymentType: serverInfo.deploymentType,
+      ...(changelogStrategy !== undefined ? { changelogStrategy } : {}),
+      capabilitiesDetectedAt: new Date(),
+    });
+  } catch (err) {
+    logger.warn('Failed to detect Jira server capabilities before sync; continuing with runtime probing', {
+      syncRunId,
+      connectionId: connection.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 

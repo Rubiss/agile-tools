@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { JiraClientError, createJiraClient } from './client.js';
+import {
+  JiraClientError,
+  createJiraClient,
+  inferChangelogFetchStrategyFromServerInfo,
+} from './client.js';
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -127,5 +131,37 @@ describe('JiraClient.validateConnection', () => {
       statusCode: 401,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('inferChangelogFetchStrategyFromServerInfo', () => {
+  it('selects issue expansion for Jira Server versions before 8.3', () => {
+    expect(
+      inferChangelogFetchStrategyFromServerInfo({
+        version: '8.2.6',
+        deploymentType: 'Server',
+      }),
+    ).toBe('issue_expand');
+    expect(
+      inferChangelogFetchStrategyFromServerInfo({
+        version: '7.13.18',
+        deploymentType: 'Server',
+      }),
+    ).toBe('issue_expand');
+  });
+
+  it('selects the changelog subresource for modern Server and Cloud deployments', () => {
+    expect(
+      inferChangelogFetchStrategyFromServerInfo({
+        version: '8.3.0',
+        deploymentType: 'Server',
+      }),
+    ).toBe('subresource');
+    expect(
+      inferChangelogFetchStrategyFromServerInfo({
+        version: '1001.0.0',
+        deploymentType: 'Cloud',
+      }),
+    ).toBe('subresource');
   });
 });

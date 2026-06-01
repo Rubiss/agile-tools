@@ -5,8 +5,11 @@ const {
   loggerMock,
   getConfigMock,
   decryptSecretMock,
+  updateJiraConnectionCapabilitiesMock,
   createJiraClientMock,
+  inferChangelogFetchStrategyFromServerInfoMock,
   getBoardDetailWithFilterIdMock,
+  normalizeChangelogFetchStrategyMock,
   streamBoardIssuesMock,
   streamJqlIssuesMock,
   fetchIssueChangelogMock,
@@ -25,7 +28,11 @@ const {
     }
   }
 
-  const jiraClientStub = { name: 'jira-client' };
+  const jiraClientStub = {
+    name: 'jira-client',
+    fetchServerInfo: vi.fn(),
+    setChangelogFetchStrategy: vi.fn(),
+  };
   const loggerMock = {
     debug: vi.fn(),
     error: vi.fn(),
@@ -42,8 +49,11 @@ const {
       SYNC_PUBLISH_TRANSACTION_MAX_WAIT_MS: 30_000,
     })),
     decryptSecretMock: vi.fn(() => 'pat-123'),
+    updateJiraConnectionCapabilitiesMock: vi.fn(),
     createJiraClientMock: vi.fn(() => jiraClientStub),
+    inferChangelogFetchStrategyFromServerInfoMock: vi.fn(),
     getBoardDetailWithFilterIdMock: vi.fn(),
+    normalizeChangelogFetchStrategyMock: vi.fn(),
     streamBoardIssuesMock: vi.fn(),
     streamJqlIssuesMock: vi.fn(),
     fetchIssueChangelogMock: vi.fn(),
@@ -59,6 +69,7 @@ const {
 
 vi.mock('@agile-tools/db', () => ({
   DEFAULT_COMPLETED_WINDOW_DAYS: 90,
+  updateJiraConnectionCapabilities: updateJiraConnectionCapabilitiesMock,
 }));
 
 vi.mock('@agile-tools/shared', () => ({
@@ -75,7 +86,9 @@ vi.mock('@agile-tools/shared', () => ({
 vi.mock('@agile-tools/jira-client', () => ({
   JiraClientError: MockJiraClientError,
   createJiraClient: createJiraClientMock,
+  inferChangelogFetchStrategyFromServerInfo: inferChangelogFetchStrategyFromServerInfoMock,
   getBoardDetailWithFilterId: getBoardDetailWithFilterIdMock,
+  normalizeChangelogFetchStrategy: normalizeChangelogFetchStrategyMock,
   streamBoardIssues: streamBoardIssuesMock,
   streamJqlIssues: streamJqlIssuesMock,
   fetchIssueChangelog: fetchIssueChangelogMock,
@@ -159,7 +172,14 @@ async function* pausingIssueStream<T>(
   }
 }
 
-function createDb(options?: { doneStatusIds?: string[] }) {
+function createDb(options?: {
+  doneStatusIds?: string[];
+  connection?: Partial<{
+    jiraVersion: string | null;
+    jiraDeploymentType: string | null;
+    changelogStrategy: string | null;
+  }>;
+}) {
   type StagedItem = { id: string; syncRunId: string; jiraIssueId: string };
   type StageCreateManyArgs = { data: Array<Omit<StagedItem, 'id'>>; skipDuplicates?: boolean };
 
@@ -179,6 +199,10 @@ function createDb(options?: { doneStatusIds?: string[] }) {
     workspaceId: 'workspace-1',
     baseUrl: 'https://jira.example.internal',
     encryptedSecretRef: 'encrypted-secret',
+    jiraVersion: null,
+    jiraDeploymentType: null,
+    changelogStrategy: null,
+    ...options?.connection,
   };
   const workItemUpsert = vi.fn((args: { where: { scopeId_jiraIssueId: { jiraIssueId: string } } }) =>
     Promise.resolve({
@@ -285,6 +309,17 @@ describe('runScopeSync', () => {
     });
     decryptSecretMock.mockReturnValue('pat-123');
     createJiraClientMock.mockReturnValue(jiraClientStub);
+    jiraClientStub.fetchServerInfo.mockResolvedValue({
+      version: '8.2.0',
+      deploymentType: 'Server',
+      baseUrl: 'https://jira.example.internal',
+    });
+    jiraClientStub.setChangelogFetchStrategy.mockReturnValue(undefined);
+    updateJiraConnectionCapabilitiesMock.mockResolvedValue(undefined);
+    inferChangelogFetchStrategyFromServerInfoMock.mockReturnValue('issue_expand');
+    normalizeChangelogFetchStrategyMock.mockImplementation((strategy: unknown) =>
+      strategy === 'subresource' || strategy === 'issue_expand' ? strategy : undefined,
+    );
     getBoardDetailWithFilterIdMock.mockResolvedValue({
       detail: {
         boardId: 42,
@@ -335,6 +370,67 @@ describe('runScopeSync', () => {
         lifecycleEvents: [],
       }),
     );
+  });
+
+  it('detects and persists Jira server capabilities during sync when missing', async () => {
+    const db = createDb({ doneStatusIds: [] });
+    const boardIssue = makeIssue({
+      id: 'ISSUE-1',
+      key: 'PROJ-1',
+      projectId: 'proj-board',
+      statusId: '10',
+      statusName: 'In Progress',
+    });
+
+    streamBoardIssuesMock.mockReturnValue(issueStream(boardIssue));
+
+    await runScopeSync(db as unknown as Parameters<typeof runScopeSync>[0], 'run-1');
+
+    expect(jiraClientStub.fetchServerInfo).toHaveBeenCalledTimes(1);
+    expect(jiraClientStub.setChangelogFetchStrategy).toHaveBeenCalledWith('issue_expand');
+    expect(updateJiraConnectionCapabilitiesMock).toHaveBeenCalledWith(
+      db,
+      'workspace-1',
+      'connection-1',
+      expect.objectContaining({
+        jiraVersion: '8.2.0',
+        jiraDeploymentType: 'Server',
+        changelogStrategy: 'issue_expand',
+        capabilitiesDetectedAt: expect.any(Date),
+      }),
+    );
+  });
+
+  it('seeds the Jira client from persisted changelog strategy', async () => {
+    const db = createDb({
+      doneStatusIds: [],
+      connection: {
+        jiraVersion: '8.2.0',
+        jiraDeploymentType: 'Server',
+        changelogStrategy: 'issue_expand',
+      },
+    });
+    const boardIssue = makeIssue({
+      id: 'ISSUE-1',
+      key: 'PROJ-1',
+      projectId: 'proj-board',
+      statusId: '10',
+      statusName: 'In Progress',
+    });
+
+    streamBoardIssuesMock.mockReturnValue(issueStream(boardIssue));
+
+    await runScopeSync(db as unknown as Parameters<typeof runScopeSync>[0], 'run-1');
+
+    expect(createJiraClientMock).toHaveBeenCalledWith(
+      'https://jira.example.internal',
+      'pat-123',
+      expect.objectContaining({
+        changelogFetchStrategy: 'issue_expand',
+        onChangelogFetchStrategyDetected: expect.any(Function),
+      }),
+    );
+    expect(jiraClientStub.fetchServerInfo).not.toHaveBeenCalled();
   });
 
   it('backfills completed issues using the board filter JQL', async () => {

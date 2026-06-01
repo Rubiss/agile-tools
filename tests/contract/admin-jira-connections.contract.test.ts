@@ -222,6 +222,10 @@ describe('PUT /v1/admin/jira-connections/:id', () => {
         lastValidatedAt: new Date('2026-04-19T12:00:00Z'),
         lastHealthyAt: new Date('2026-04-19T12:00:00Z'),
         lastErrorCode: 'JIRA_AUTH_ERROR',
+        jiraVersion: '8.2.0',
+        jiraDeploymentType: 'Server',
+        changelogStrategy: 'issue_expand',
+        capabilitiesDetectedAt: new Date('2026-04-19T12:00:00Z'),
       },
     });
 
@@ -242,6 +246,12 @@ describe('PUT /v1/admin/jira-connections/:id', () => {
     expect(parsed.data?.healthStatus).toBe('draft');
     expect(parsed.data?.lastValidatedAt).toBeUndefined();
     expect(parsed.data?.lastErrorCode).toBeUndefined();
+
+    const stored = await db.jiraConnection.findUniqueOrThrow({ where: { id: connectionId } });
+    expect(stored.jiraVersion).toBeNull();
+    expect(stored.jiraDeploymentType).toBeNull();
+    expect(stored.changelogStrategy).toBeNull();
+    expect(stored.capabilitiesDetectedAt).toBeNull();
   });
 
   it('returns 200 and preserves healthy state when only the display name changes', async () => {
@@ -345,6 +355,14 @@ describe('POST /v1/admin/jira-connections/:id/validate', () => {
     expect(parsed.success, JSON.stringify(parsed.error)).toBe(true);
     expect(parsed.data?.healthStatus).toBe('healthy');
     expect(parsed.data?.connectionId).toBe(connectionId);
+
+    const stored = await getPrismaClient().jiraConnection.findUniqueOrThrow({
+      where: { id: connectionId },
+    });
+    expect(stored.jiraVersion).toBe('8.14.0');
+    expect(stored.jiraDeploymentType).toBe('Server');
+    expect(stored.changelogStrategy).toBe('subresource');
+    expect(stored.capabilitiesDetectedAt).toBeInstanceOf(Date);
   });
 
   it('returns 200 with unhealthy validation when Jira returns 401', async () => {

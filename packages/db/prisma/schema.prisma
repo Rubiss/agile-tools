@@ -19,6 +19,11 @@ enum ConnectionHealthStatus {
   disabled
 }
 
+enum JiraChangelogStrategy {
+  subresource
+  issue_expand
+}
+
 enum FlowScopeStatus {
   active
   paused
@@ -74,6 +79,10 @@ model JiraConnection {
   lastValidatedAt    DateTime?
   lastHealthyAt      DateTime?
   lastErrorCode      String?
+  jiraVersion        String?
+  jiraDeploymentType String?
+  changelogStrategy  JiraChangelogStrategy?
+  capabilitiesDetectedAt DateTime?
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
 

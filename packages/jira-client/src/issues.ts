@@ -1,4 +1,4 @@
-import { JiraClientError, type JiraClient } from './client.js';
+import { JiraClientError, type JiraChangelogFetchStrategy, type JiraClient } from './client.js';
 
 // ─── Raw Jira API response shapes ────────────────────────────────────────────
 
@@ -156,6 +156,42 @@ export async function fetchIssueChangelog(
   client: JiraClient,
   issueIdOrKey: string,
 ): Promise<ChangelogHistory[]> {
+  const strategy = client.getChangelogFetchStrategy();
+  if (strategy === 'issue_expand') {
+    return fetchIssueChangelogExpansion(client, issueIdOrKey);
+  }
+
+  if (strategy === 'subresource') {
+    return fetchIssueChangelogSubresourceWithFallback(client, issueIdOrKey);
+  }
+
+  const detectedStrategy = await client.detectChangelogFetchStrategy(async () =>
+    detectChangelogFetchStrategy(client, issueIdOrKey),
+  );
+  return detectedStrategy === 'issue_expand'
+    ? fetchIssueChangelogExpansion(client, issueIdOrKey)
+    : fetchIssueChangelogSubresourceWithFallback(client, issueIdOrKey);
+}
+
+async function detectChangelogFetchStrategy(
+  client: JiraClient,
+  issueIdOrKey: string,
+): Promise<JiraChangelogFetchStrategy> {
+  try {
+    await fetchIssueChangelogPage(client, issueIdOrKey, 0, 1);
+    return 'subresource';
+  } catch (error) {
+    if (error instanceof JiraClientError && error.code === 'not_found') {
+      return 'issue_expand';
+    }
+    throw error;
+  }
+}
+
+async function fetchIssueChangelogSubresourceWithFallback(
+  client: JiraClient,
+  issueIdOrKey: string,
+): Promise<ChangelogHistory[]> {
   try {
     return await fetchIssueChangelogSubresource(client, issueIdOrKey);
   } catch (error) {
@@ -163,6 +199,7 @@ export async function fetchIssueChangelog(
       throw error;
     }
 
+    client.setChangelogFetchStrategy('issue_expand');
     return fetchIssueChangelogExpansion(client, issueIdOrKey);
   }
 }
@@ -176,10 +213,7 @@ async function fetchIssueChangelogSubresource(
   const maxResults = 100;
 
   for (;;) {
-    const page = await client.get<JiraChangelogPageResponse>(
-      `/rest/api/2/issue/${issueIdOrKey}/changelog`,
-      { params: { startAt, maxResults } },
-    );
+    const page = await fetchIssueChangelogPage(client, issueIdOrKey, startAt, maxResults);
 
     histories.push(...page.values);
 
@@ -189,6 +223,18 @@ async function fetchIssueChangelogSubresource(
   }
 
   return histories;
+}
+
+function fetchIssueChangelogPage(
+  client: JiraClient,
+  issueIdOrKey: string,
+  startAt: number,
+  maxResults: number,
+): Promise<JiraChangelogPageResponse> {
+  return client.get<JiraChangelogPageResponse>(
+    `/rest/api/2/issue/${issueIdOrKey}/changelog`,
+    { params: { startAt, maxResults } },
+  );
 }
 
 async function fetchIssueChangelogExpansion(

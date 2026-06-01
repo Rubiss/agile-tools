@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient, type JiraConnection } from '@prisma/client';
-import type { ConnectionHealthStatus } from '@prisma/client';
+import type { ConnectionHealthStatus, JiraChangelogStrategy } from '@prisma/client';
 
 type JiraConnectionClient = PrismaClient | Prisma.TransactionClient;
 
@@ -22,6 +22,13 @@ export interface UpdateConnectionHealthInput {
   lastHealthyAt?: Date;
   /** Pass `null` to clear the error code. Pass `undefined` to leave unchanged. */
   lastErrorCode?: string | null;
+}
+
+export interface UpdateJiraConnectionCapabilitiesInput {
+  jiraVersion?: string | null;
+  jiraDeploymentType?: string | null;
+  changelogStrategy?: JiraChangelogStrategy | null;
+  capabilitiesDetectedAt?: Date;
 }
 
 export async function createJiraConnection(
@@ -113,6 +120,47 @@ export async function updateJiraConnection(
     data.lastValidatedAt = null;
     data.lastHealthyAt = null;
     data.lastErrorCode = null;
+    data.jiraVersion = null;
+    data.jiraDeploymentType = null;
+    data.changelogStrategy = null;
+    data.capabilitiesDetectedAt = null;
+  }
+
+  try {
+    return await client.jiraConnection.update({
+      where: { workspaceId_id: { workspaceId, id: connectionId } },
+      data,
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Persist Jira server metadata and detected API capabilities.
+ *
+ * All fields are optional so callers can update version metadata from
+ * `/serverInfo`, changelog strategy from a runtime probe, or both together.
+ */
+export async function updateJiraConnectionCapabilities(
+  client: JiraConnectionClient,
+  workspaceId: string,
+  connectionId: string,
+  input: UpdateJiraConnectionCapabilitiesInput,
+): Promise<JiraConnection | null> {
+  const data: Prisma.JiraConnectionUpdateInput = {};
+  if (input.jiraVersion !== undefined) data.jiraVersion = input.jiraVersion;
+  if (input.jiraDeploymentType !== undefined) data.jiraDeploymentType = input.jiraDeploymentType;
+  if (input.changelogStrategy !== undefined) data.changelogStrategy = input.changelogStrategy;
+  if (input.capabilitiesDetectedAt !== undefined) {
+    data.capabilitiesDetectedAt = input.capabilitiesDetectedAt;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return getJiraConnection(client, workspaceId, connectionId);
   }
 
   try {

@@ -5,6 +5,13 @@ import { metricsClock, recordJiraRequest } from '@agile-tools/shared';
 const CONCURRENCY_LIMIT = 3;
 const RETRY_ATTEMPTS = 3;
 
+export type JiraChangelogFetchStrategy = 'subresource' | 'issue_expand';
+
+export interface JiraClientOptions {
+  changelogFetchStrategy?: JiraChangelogFetchStrategy | null;
+  onChangelogFetchStrategyDetected?: (strategy: JiraChangelogFetchStrategy) => void | Promise<void>;
+}
+
 export class JiraClientError extends Error {
   constructor(
     message: string,
@@ -46,14 +53,57 @@ function metricsErrorType(error: unknown): string | undefined {
 
 export class JiraClient {
   private readonly limiter = pLimit(CONCURRENCY_LIMIT);
+  private changelogFetchStrategy: JiraChangelogFetchStrategy | undefined;
+  private changelogStrategyProbe: Promise<JiraChangelogFetchStrategy> | undefined;
   readonly baseUrl: string;
 
   constructor(
     baseUrl: string,
     private readonly pat: string,
+    private readonly options: JiraClientOptions = {},
   ) {
     // Normalize base URL: strip trailing slash
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.changelogFetchStrategy = options.changelogFetchStrategy ?? undefined;
+  }
+
+  getChangelogFetchStrategy(): JiraChangelogFetchStrategy | undefined {
+    return this.changelogFetchStrategy;
+  }
+
+  setChangelogFetchStrategy(strategy: JiraChangelogFetchStrategy): void {
+    if (this.changelogFetchStrategy === strategy) {
+      return;
+    }
+
+    this.changelogFetchStrategy = strategy;
+    try {
+      const detected = this.options.onChangelogFetchStrategyDetected?.(strategy);
+      if (detected && typeof detected === 'object' && 'catch' in detected) {
+        void detected.catch(() => undefined);
+      }
+    } catch {
+      // Changelog strategy persistence is an optimization; detection should not fail sync.
+    }
+  }
+
+  async detectChangelogFetchStrategy(
+    probe: () => Promise<JiraChangelogFetchStrategy>,
+  ): Promise<JiraChangelogFetchStrategy> {
+    if (this.changelogFetchStrategy) {
+      return this.changelogFetchStrategy;
+    }
+
+    this.changelogStrategyProbe ??= probe()
+      .then((strategy) => {
+        this.setChangelogFetchStrategy(strategy);
+        return strategy;
+      })
+      .finally(() => {
+        this.changelogStrategyProbe = undefined;
+      });
+
+    return this.changelogStrategyProbe;
   }
 
   async get<T>(path: string, options: FetchOptions = {}): Promise<T> {
@@ -145,6 +195,18 @@ export class JiraClient {
     );
   }
 
+  async fetchServerInfo(): Promise<JiraServerInfo> {
+    const serverInfo = await this.get<{ version: string; deploymentType?: string; baseUrl: string }>(
+      '/rest/api/2/serverInfo',
+    );
+
+    return {
+      version: serverInfo.version,
+      deploymentType: serverInfo.deploymentType ?? 'Server',
+      baseUrl: serverInfo.baseUrl,
+    };
+  }
+
   /**
    * Validate the PAT by checking Jira identity and Agile board access.
    * Returns server info on success; throws JiraClientError on failure.
@@ -159,19 +221,41 @@ export class JiraClient {
     // Verify Agile board access (needed for board discovery and sync)
     await this.get('/rest/agile/1.0/board', { params: { type: 'kanban', maxResults: 1 } });
 
-    // Fetch server version metadata
-    const serverInfo = await this.get<{ version: string; deploymentType?: string; baseUrl: string }>(
-      '/rest/api/2/serverInfo',
-    );
-
-    return {
-      version: serverInfo.version,
-      deploymentType: serverInfo.deploymentType ?? 'Server',
-      baseUrl: serverInfo.baseUrl,
-    };
+    return this.fetchServerInfo();
   }
 }
 
-export function createJiraClient(baseUrl: string, pat: string): JiraClient {
-  return new JiraClient(baseUrl, pat);
+export function createJiraClient(
+  baseUrl: string,
+  pat: string,
+  options: JiraClientOptions = {},
+): JiraClient {
+  return new JiraClient(baseUrl, pat, options);
+}
+
+export function inferChangelogFetchStrategyFromServerInfo(
+  info: Pick<JiraServerInfo, 'version' | 'deploymentType'>,
+): JiraChangelogFetchStrategy | undefined {
+  if (info.deploymentType.toLowerCase() === 'cloud') {
+    return 'subresource';
+  }
+
+  const [majorRaw, minorRaw] = info.version.split('.');
+  const major = Number(majorRaw);
+  const minor = Number(minorRaw);
+  if (!Number.isInteger(major) || !Number.isInteger(minor)) {
+    return undefined;
+  }
+
+  if (major < 8 || (major === 8 && minor < 3)) {
+    return 'issue_expand';
+  }
+
+  return 'subresource';
+}
+
+export function normalizeChangelogFetchStrategy(
+  value: string | null | undefined,
+): JiraChangelogFetchStrategy | undefined {
+  return value === 'subresource' || value === 'issue_expand' ? value : undefined;
 }

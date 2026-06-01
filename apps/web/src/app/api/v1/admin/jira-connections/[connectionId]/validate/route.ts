@@ -1,6 +1,11 @@
 import { type NextRequest } from 'next/server';
-import { getPrismaClient, updateConnectionHealth } from '@agile-tools/db';
+import {
+  getPrismaClient,
+  updateConnectionHealth,
+  updateJiraConnectionCapabilities,
+} from '@agile-tools/db';
 import { logger } from '@agile-tools/shared';
+import { inferChangelogFetchStrategyFromServerInfo } from '@agile-tools/jira-client';
 import { requireAdminContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { assertTrustedMutationRequest, enforceRateLimit } from '@/server/request-security';
@@ -35,13 +40,25 @@ async function handlePOST(
     const validatedAt = new Date();
 
     try {
-      await client.validateConnection();
+      const serverInfo = await client.validateConnection();
+      const changelogStrategy = inferChangelogFetchStrategyFromServerInfo(serverInfo);
 
       await updateConnectionHealth(prisma, ctx.workspaceId, connectionId, {
         healthStatus: 'healthy',
         lastValidatedAt: validatedAt,
         lastHealthyAt: validatedAt,
         lastErrorCode: null,
+      });
+      await updateJiraConnectionCapabilities(prisma, ctx.workspaceId, connectionId, {
+        jiraVersion: serverInfo.version,
+        jiraDeploymentType: serverInfo.deploymentType,
+        ...(changelogStrategy !== undefined ? { changelogStrategy } : {}),
+        capabilitiesDetectedAt: validatedAt,
+      }).catch((capabilityErr: unknown) => {
+        logger.warn('Failed to persist Jira connection capabilities after validation', {
+          connectionId,
+          error: capabilityErr instanceof Error ? capabilityErr.message : String(capabilityErr),
+        });
       });
 
       return Response.json({
