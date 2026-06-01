@@ -7,6 +7,8 @@ import {
   recordForecastRun,
   recordHttpRequest,
   recordJiraRequest,
+  recordSyncRun,
+  recordWorkerJob,
   startMetricsServer,
   stopMetricsServer,
 } from './metrics.js';
@@ -73,6 +75,34 @@ describe('metrics', () => {
     expect(body).not.toContain('agile_tools_jira_request_duration_seconds');
   });
 
+  it('uses minute-scale buckets for worker job and sync run durations', async () => {
+    initializeMetrics({ serviceName: 'agile-tools-test', runtime: 'test' });
+
+    recordWorkerJob({
+      queue: 'sync',
+      trigger: 'scheduled',
+      result: 'succeeded',
+      durationSeconds: 420,
+    });
+    recordSyncRun({
+      trigger: 'scheduled',
+      result: 'succeeded',
+      durationSeconds: 420,
+    });
+
+    const { body } = await collectPrometheusMetrics();
+    const workerJobBuckets = bucketLinesFor(body, 'agile_tools_worker_job_duration_seconds_bucket');
+    const syncRunBuckets = bucketLinesFor(body, 'agile_tools_sync_run_duration_seconds_bucket');
+
+    for (const buckets of [workerJobBuckets, syncRunBuckets]) {
+      expect(buckets).toEqual(expect.arrayContaining(['5', '10', '30', '60', '120', '300', '600', '900', '+Inf']));
+      expect(buckets).not.toContain('0');
+      expect(buckets).not.toContain('500');
+      expect(buckets).not.toContain('750');
+      expect(buckets).not.toContain('1000');
+    }
+  });
+
   it('serves metrics over HTTP on the requested port', async () => {
     await stopMetricsServer();
     initializeMetrics({ serviceName: 'agile-tools-test', runtime: 'test' });
@@ -109,3 +139,11 @@ describe('metrics', () => {
     expect(await response.text()).toContain('agile_tools_metrics_scrapes_total');
   });
 });
+
+function bucketLinesFor(body: string, metricName: string): string[] {
+  return body
+    .split('\n')
+    .filter((line) => line.startsWith(metricName))
+    .map((line) => /le="([^"]+)"/.exec(line)?.[1])
+    .filter((bucket): bucket is string => bucket !== undefined);
+}
