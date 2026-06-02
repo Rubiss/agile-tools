@@ -1,0 +1,16 @@
+{
+  "fullLabels": [
+    "Selected",
+    "In Progress",
+    "Review",
+    "Done"
+  ],
+  "hideLabels": [
+    "Selected",
+    "In Progress"
+  ],
+  "fullChartWidth": 1146,
+  "hideChartWidth": 1146,
+  "fullDotSpread": 283,
+  "hideDotSpread": 548
+}

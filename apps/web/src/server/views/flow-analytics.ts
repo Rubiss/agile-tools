@@ -141,10 +141,9 @@ function buildColumnNames(response: FlowAnalyticsResponse): string[] {
   for (const model of response.columnAgingModels ?? []) {
     names.push(model.columnName);
   }
-  for (const point of response.points) {
-    if (point.currentColumn) names.push(point.currentColumn);
-    for (const duration of point.columnDurations ?? []) {
-      names.push(duration.columnName);
+  if (names.length === 0) {
+    for (const point of response.points) {
+      if (point.currentColumn) names.push(point.currentColumn);
     }
   }
   return Array.from(new Set(names));
