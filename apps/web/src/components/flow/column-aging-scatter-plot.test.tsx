@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { ColumnAgingScatterPlot } from './column-aging-scatter-plot';
@@ -188,6 +188,41 @@ describe('ColumnAgingScatterPlot', () => {
     expect(new Set(cxValues).size).toBe(3);
   });
 
+  it('uses a wider horizontal spread for dense Jira dots in the same column', () => {
+    const { container } = render(
+      <ColumnAgingScatterPlot
+        hideEmptyColumns
+        viewModel={viewModel([
+          columnPoint({
+            workItemId: '11111111-1111-4111-8111-111111111111',
+            issueKey: 'AGILE-101',
+            currentColumn: 'In Progress',
+            y: 5,
+          }),
+          columnPoint({
+            workItemId: '22222222-2222-4222-8222-222222222222',
+            issueKey: 'AGILE-102',
+            currentColumn: 'In Progress',
+            y: 5,
+          }),
+          columnPoint({
+            workItemId: '33333333-3333-4333-8333-333333333333',
+            issueKey: 'AGILE-103',
+            currentColumn: 'In Progress',
+            y: 5.1,
+          }),
+        ])}
+      />,
+    );
+
+    const cxValues = Array.from(container.querySelectorAll('circle'))
+      .map((circle) => Number(circle.getAttribute('cx')))
+      .sort((a, b) => a - b);
+
+    expect(cxValues).toHaveLength(3);
+    expect(cxValues[2]! - cxValues[0]!).toBeGreaterThan(30);
+  });
+
   it('keeps threshold markers, labels, and points inside the plot bounds', () => {
     const { container } = render(
       <ColumnAgingScatterPlot
@@ -229,5 +264,32 @@ describe('ColumnAgingScatterPlot', () => {
       expect(x).toBeGreaterThanOrEqual(minX);
       expect(x).toBeLessThanOrEqual(maxX);
     }
+  });
+
+  it('shows an interactive hover card for column points', () => {
+    render(
+      <ColumnAgingScatterPlot
+        viewModel={viewModel([
+          columnPoint({
+            workItemId: '11111111-1111-4111-8111-111111111111',
+            issueKey: 'AGILE-101',
+            summary: 'Hover me',
+            currentColumn: 'In Progress',
+            currentStatus: 'Doing',
+            assigneeName: 'Riley Chen',
+            y: 5.5,
+            agingZone: 'watch',
+          }),
+        ])}
+      />,
+    );
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /AGILE-101: 5.5 working days in In Progress/i }));
+
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    expect(screen.getByText('Hover me')).toBeInTheDocument();
+    expect(screen.getByText('Doing · In Progress')).toBeInTheDocument();
+    expect(screen.getByText('5.5 days')).toBeInTheDocument();
+    expect(screen.getByText('Riley Chen')).toBeInTheDocument();
   });
 });

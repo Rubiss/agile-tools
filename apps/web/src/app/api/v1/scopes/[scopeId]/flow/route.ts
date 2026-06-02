@@ -22,6 +22,7 @@ import {
 import { requireWorkspaceContext } from '@/server/auth';
 import { ResponseError } from '@/server/errors';
 import { withHttpMetrics } from '@/server/route-metrics';
+import { selectInScopeColumnAgingModels } from './column-aging-scope';
 
 const DEFAULT_HISTORICAL_WINDOW = 90;
 const LOW_CONFIDENCE_SAMPLE = 30;
@@ -149,7 +150,12 @@ async function handleGET(
       });
     }
 
-    const columnAgingModels = parseColumnAgingModels(agingModelRow?.columnThresholds);
+    const columnAgingModels = selectInScopeColumnAgingModels(
+      parseColumnAgingModels(agingModelRow?.columnThresholds),
+      columnMappings,
+      scope.startStatusIds,
+      scope.doneStatusIds,
+    );
     const columnAgingModelByName = new Map(columnAgingModels.map((model) => [model.columnName, model]));
 
     const points: FlowPoint[] = filtered.map((item) => ({

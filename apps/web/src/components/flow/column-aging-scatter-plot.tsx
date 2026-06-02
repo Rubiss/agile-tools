@@ -1,6 +1,8 @@
 'use client';
 
-import type { ColumnScatterDatum, FlowAnalyticsViewModel } from '@/server/views/flow-analytics';
+import { useEffect, useRef, useState } from 'react';
+import { AgingScatterTooltipCard } from './aging-scatter-plot';
+import type { ColumnScatterDatum, FlowAnalyticsViewModel, ScatterDatum } from '@/server/views/flow-analytics';
 import { palette } from '@/components/app/chrome';
 
 const zoneColors: Record<ColumnScatterDatum['agingZone'], string> = {
@@ -22,6 +24,31 @@ export function ColumnAgingScatterPlot({
   hideEmptyColumns = false,
   height = 360,
 }: ColumnAgingScatterPlotProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [chartWidth, setChartWidth] = useState(920);
+  const [hoveredPoint, setHoveredPoint] = useState<{
+    point: ColumnScatterDatum;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    const updateWidth = () => {
+      const nextWidth = Math.max(680, Math.round(element.clientWidth || 920));
+      setChartWidth((current) => (current === nextWidth ? current : nextWidth));
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => updateWidth());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const points = viewModel.columnSeries.flatMap((serie) => serie.data);
   const columns = buildVisibleColumns(viewModel, points, hideEmptyColumns);
 
@@ -44,7 +71,7 @@ export function ColumnAgingScatterPlot({
     );
   }
 
-  const width = 920;
+  const width = chartWidth;
   const margin = { top: 26, right: 28, bottom: 70, left: 58 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
@@ -54,7 +81,7 @@ export function ColumnAgingScatterPlot({
   const maxY = Math.max(1, ...points.map((point) => point.y), ...thresholds);
   const yMax = Math.ceil(maxY * 1.15);
   const yTicks = buildTicks(yMax);
-  const maxPointOffset = Math.max(0, Math.min(34, (slotWidth / 2) - 8));
+  const maxPointOffset = Math.max(0, slotWidth * 0.44 - 10);
   const pointLayouts = layoutColumnPoints(viewModel, columns, yForDays, maxPointOffset);
   const columnIndexByName = new Map(columns.map((column, index) => [column, index]));
 
@@ -67,7 +94,7 @@ export function ColumnAgingScatterPlot({
   }
 
   return (
-    <div style={{ height }} aria-label="Column aging scatter plot">
+    <div ref={containerRef} style={{ height, position: 'relative' }} aria-label="Column aging scatter plot">
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Column aging scatter plot" style={{ width: '100%', height: '100%' }}>
         <line
           x1={margin.left}
@@ -103,7 +130,7 @@ export function ColumnAgingScatterPlot({
         {columns.map((column, index) => {
           const x = xForColumn(index);
           const model = viewModel.columnAgingModels.find((candidate) => candidate.columnName === column);
-          const halfBand = Math.min(slotWidth * 0.35, 46);
+          const halfBand = Math.min(slotWidth * 0.38, 84);
           return (
             <g key={column}>
               <line x1={x} x2={x} y1={margin.top} y2={margin.top + plotHeight} stroke={palette.line} opacity={0.35} />
@@ -174,8 +201,28 @@ export function ColumnAgingScatterPlot({
             const layoutKey = pointLayoutKey(serie.id, point);
             const x = xForColumn(columnIndex) + (pointLayouts.get(layoutKey) ?? 0);
             const y = yForDays(point.y);
+            const showTooltip = () => setHoveredPoint({ point, x, y });
+            const hideTooltip = () =>
+              setHoveredPoint((current) =>
+                current?.point.workItemId === point.workItemId ? null : current,
+              );
             return (
-              <g key={`${serie.id}-${point.workItemId}`} role="button" tabIndex={0} aria-label={`${point.issueKey}: ${point.y.toFixed(1)} working days in ${point.currentColumn}`}>
+              <g
+                key={`${serie.id}-${point.workItemId}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${point.issueKey}: ${point.y.toFixed(1)} working days in ${point.currentColumn}`}
+                onMouseEnter={showTooltip}
+                onMouseLeave={hideTooltip}
+                onFocus={showTooltip}
+                onBlur={hideTooltip}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onItemSelect?.(point.workItemId, point.issueKey);
+                  }
+                }}
+              >
                 <circle
                   cx={x}
                   cy={y}
@@ -193,8 +240,47 @@ export function ColumnAgingScatterPlot({
           }),
         )}
       </svg>
+      {hoveredPoint ? (
+        <div
+          role="tooltip"
+          aria-live="polite"
+          style={{
+            position: 'absolute',
+            left: `${(hoveredPoint.x / width) * 100}%`,
+            top: `${(hoveredPoint.y / height) * 100}%`,
+            transform:
+              hoveredPoint.x > width * 0.68
+                ? 'translate(calc(-100% - 0.85rem), calc(-100% - 0.85rem))'
+                : 'translate(0.85rem, calc(-100% - 0.85rem))',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        >
+          <AgingScatterTooltipCard
+            datum={toScatterDatum(hoveredPoint.point)}
+            ageDays={hoveredPoint.point.y}
+          />
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function toScatterDatum(point: ColumnScatterDatum): ScatterDatum {
+  return {
+    x: point.y,
+    y: point.x,
+    workItemId: point.workItemId,
+    issueKey: point.issueKey,
+    summary: point.summary,
+    issueType: point.issueType,
+    currentStatus: point.currentStatus,
+    currentColumn: point.currentColumn,
+    assigneeName: point.assigneeName,
+    onHoldNow: point.onHoldNow,
+    agingZone: point.agingZone,
+    jiraUrl: point.jiraUrl,
+  };
 }
 
 function buildVisibleColumns(
@@ -308,7 +394,7 @@ function layoutColumnPoints(
     for (const item of sorted) {
       const currentCluster = clusters[clusters.length - 1];
       const previous = currentCluster?.[currentCluster.length - 1];
-      if (!currentCluster || !previous || Math.abs(item.y - previous.y) > 14) {
+      if (!currentCluster || !previous || Math.abs(item.y - previous.y) > 18) {
         clusters.push([item]);
       } else {
         currentCluster.push(item);
@@ -328,7 +414,7 @@ function layoutColumnPoints(
 
 function buildOffsets(count: number, maxOffset: number): number[] {
   if (count <= 1 || maxOffset <= 0) return Array.from({ length: count }, () => 0);
-  const spacing = Math.min(14, (maxOffset * 2) / (count - 1));
+  const spacing = Math.min(18, (maxOffset * 2) / (count - 1));
   return Array.from({ length: count }, (_, index) => (index - ((count - 1) / 2)) * spacing);
 }
 
